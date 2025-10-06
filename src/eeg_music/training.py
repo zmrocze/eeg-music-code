@@ -392,104 +392,129 @@ def log_hyperparameters(model, dataloaders, config, wandb_logger):
 class MainTraining:
   def __init__(self, config):
     self.config = config
+    self.dataloaders: dict
+    self.model: EegptLightning
+    self.wandb_logger: WandbLogger
+    self.callbacks: list[Callback]
+    self.trainer: Trainer
+
+  def create_dataloaders(self):
+    self.dataloaders = load_and_create_dataloaders(self.config.data_path, self.config)
+    assert (
+      isinstance(self.config.lr_config, float)
+      if self.config.use_learning_rate_finder
+      else True
+    )
+
+  def create_model(self):
+    eegpt_config = EegptConfig(
+      chpt_path=self.config.eegpt_chpt_path,
+      lr_config=self.config.lr_config,
+      use_chan_conv=self.config.use_chan_conv,
+      trainable=self.config.trainable,
+    )
+    self.model = EegptLightning(eegpt_config)
+    freeze_all_except_head_and_adapters(self.model, verbose=True)
+
+  def initialize_logger(self):
+    self.wandb_logger = WandbLogger(
+      project=self.config.project_name,
+      name=f"{self.config.run_name}-{self.config.run_extra_name}-{self.config.randint}",
+      log_model=self.config.wandb_log_model,
+      config=asdict(self.config),
+    )
+    self.wandb_logger.watch(self.model, log="all")
+
+  def create_callbacks(self):
+    save_on_exc = OnExceptionCheckpoint(
+      f"{self.config.save_path}/exc_save",
+    )
+
+    ckpt_callback = ModelCheckpoint(
+      every_n_epochs=self.config.save_model_per_epochs,
+      dirpath=self.config.save_path,
+      save_top_k=2,
+      monitor="val_loss",
+      mode="min",
+      save_last=True,
+    )
+
+    optional_lr_finder = (
+      [LearningRateFinder(min_lr=1e-08, max_lr=1, num_training_steps=100)]
+      if self.config.use_learning_rate_finder
+      else []
+    )
+
+    # Create AUROC callbacks for each similarity metric
+    auroc_callbacks = [
+      AUROCCallback(
+        auroc_every_n_epochs=self.config.auroc_every_n_epochs,
+        similarity_metric=metric,
+        prediction_batch_size=self.config.auroc_prediction_batch_size,
+      )
+      for metric in self.config.auroc_similarity_metric
+    ]
+
+    self.callbacks = (
+      [
+        ckpt_callback,
+        SpectrogramLoggingCallback(),
+        RichProgressBar(),
+        save_on_exc,
+        LearningRateMonitor(logging_interval="step"),
+      ]
+      + auroc_callbacks
+      + optional_lr_finder
+    )
+
+  def create_trainer(self):
+    self.trainer = Trainer(
+      callbacks=self.callbacks,
+      logger=self.wandb_logger,
+      check_val_every_n_epoch=self.config.val_every_n_epoch,
+      max_epochs=self.config.num_epochs,
+      accelerator="auto",
+      log_every_n_steps=1,
+      # precision="16-mixed"
+      # precision="32-true",
+    )
+
+  def trainer_fit(self):
+    print(f"Model trainable params: {count_n_params(self.model)}")
+    print(
+      "Note that val and test dataloaders augmentation/randomness in the form of choosing the 4s fragment."
+    )
+
+    log_hyperparameters(self.model, self.dataloaders, self.config, self.wandb_logger)
+
+    self.trainer.fit(
+      self.model,
+      train_dataloaders=self.dataloaders["train"],
+      val_dataloaders=self.dataloaders["val"],
+      # ckpt_path=config.ckpt_load_path,
+      ckpt_path=None,
+    )
+
+  def trainer_test(self):
+    self.trainer.test(
+      self.model,
+      dataloaders=self.dataloaders["test"],
+    )
 
   def run(self):
-    pass
+    self.create_dataloaders()
+    self.create_model()
+    self.initialize_logger()
+    self.create_callbacks()
+    self.create_trainer()
+    self.trainer_fit()
+    self.trainer_test()
+    return self.model, self.trainer, self.dataloaders
 
 
 def main(config=config) -> Tuple[EegptLightning, Trainer, dict]:
-  dataloaders = load_and_create_dataloaders(config.data_path, config)
-  assert (
-    isinstance(config.lr_config, float) if config.use_learning_rate_finder else True
-  )
-  eegpt_config = EegptConfig(
-    chpt_path=config.eegpt_chpt_path,
-    lr_config=config.lr_config,
-    use_chan_conv=config.use_chan_conv,
-    trainable=config.trainable,
-  )
-  model = EegptLightning(eegpt_config)
-
-  freeze_all_except_head_and_adapters(model, verbose=True)
-
-  wandb_logger = WandbLogger(
-    project=config.project_name,
-    name=f"{config.run_name}-{config.run_extra_name}-{config.randint}",
-    log_model=config.wandb_log_model,
-    config=asdict(config),
-  )
-
-  wandb_logger.watch(model, log="all")
-
-  save_on_exc = OnExceptionCheckpoint(
-    f"{config.save_path}/exc_save",
-  )
-
-  ckpt_callback = ModelCheckpoint(
-    every_n_epochs=config.save_model_per_epochs,
-    dirpath=config.save_path,
-    save_top_k=2,
-    monitor="val_loss",
-    mode="min",
-    save_last=True,
-  )
-
-  optional_lr_finder = (
-    [LearningRateFinder(min_lr=1e-08, max_lr=1, num_training_steps=100)]
-    if config.use_learning_rate_finder
-    else []
-  )
-
-  # Create AUROC callbacks for each similarity metric
-  auroc_callbacks = [
-    AUROCCallback(
-      auroc_every_n_epochs=config.auroc_every_n_epochs,
-      similarity_metric=metric,
-      prediction_batch_size=config.auroc_prediction_batch_size,
-    )
-    for metric in config.auroc_similarity_metric
-  ]
-
-  trainer = Trainer(
-    callbacks=[
-      ckpt_callback,
-      SpectrogramLoggingCallback(),
-      RichProgressBar(),
-      save_on_exc,
-      LearningRateMonitor(logging_interval="step"),
-    ]
-    + auroc_callbacks
-    + optional_lr_finder,
-    logger=wandb_logger,
-    check_val_every_n_epoch=config.val_every_n_epoch,
-    max_epochs=config.num_epochs,
-    accelerator="auto",
-    log_every_n_steps=1,
-    # precision="16-mixed"
-    # precision="32-true",
-  )
-
-  print(f"Model trainable params: {count_n_params(model)}")
-  print(
-    "Note that val and test dataloaders augmentation/randomness in the form of choosing the 4s fragment."
-  )
-
-  log_hyperparameters(model, dataloaders, config, wandb_logger)
-
-  trainer.fit(
-    model,
-    train_dataloaders=dataloaders["train"],
-    val_dataloaders=dataloaders["val"],
-    # ckpt_path=config.ckpt_load_path,
-    ckpt_path=None,
-  )
-
-  trainer.test(
-    model,
-    dataloaders=dataloaders["test"],
-  )
-
-  return model, trainer, dataloaders
+  training = MainTraining(config)
+  return training.run()
 
 
 if __name__ == "__main__":
