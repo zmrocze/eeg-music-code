@@ -350,20 +350,29 @@ def log_hyperparameters(model, dataloaders, config, wandb_logger):
 
   # Parameter counts
   params_to_log["trainable_params_total"] = count_n_params(model)
-  if hasattr(model.model.model, "chan_conv"):
-    params_to_log["trainable_params_chan_conv"] = count_n_params(
-      model.model.model.chan_conv
+
+  # Determine model structure: EegptLightning uses EegptWithLinear wrapper, EegptEmotionClassifier doesn't
+  if hasattr(model.model, "linear"):
+    # EegptLightning: model.model = EegptWithLinear, model.model.model = EEGPTClassifier
+    eegpt_classifier = model.model.model
+    params_to_log["trainable_params_residual_linear"] = count_n_params(
+      model.model.linear
     )
-  params_to_log["trainable_params_residual_linear"] = count_n_params(model.model.linear)
-  params_to_log["trainable_params_head"] = count_n_params(model.model.model.head)
+    params_to_log["residual_linear_in_dim"] = model.model.linear.linear1.in_features
+    params_to_log["residual_linear_out_dim"] = model.model.linear.linear2.out_features
+  else:
+    # EegptEmotionClassifier: model.model = EEGPTClassifier directly
+    eegpt_classifier = model.model
 
-  # ResidualLinear dimensions
-  params_to_log["residual_linear_in_dim"] = model.model.linear.linear1.in_features
-  params_to_log["residual_linear_out_dim"] = model.model.linear.linear2.out_features
-
-  # EEGPTClassifier params
-  eegpt_classifier = model.model.model
+  # Common EEGPTClassifier params
+  if hasattr(eegpt_classifier, "chan_conv"):
+    params_to_log["trainable_params_chan_conv"] = count_n_params(
+      eegpt_classifier.chan_conv
+    )
+  params_to_log["trainable_params_head"] = count_n_params(eegpt_classifier.head)
   params_to_log["eegpt_classifier_use_chan_conv"] = eegpt_classifier.use_chan_conv
+  if hasattr(eegpt_classifier, "num_classes"):
+    params_to_log["num_classes"] = eegpt_classifier.num_classes
 
   # Target Encoder params
   target_encoder = eegpt_classifier.target_encoder
