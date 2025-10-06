@@ -534,7 +534,7 @@ class EmotionClassifierTraining(MainTraining):
       trainable=self.config.trainable,
     )
     self.model = EegptEmotionClassifier(eegpt_config, num_classes=9)
-    freeze_all_except_head_and_adapters(self.model, verbose=True)
+    # freeze_all_except_head_and_adapters(self.model, verbose=True)
 
   def create_callbacks(self):
     """Create callbacks without AUROC and spectrogram logging (not applicable for classification)."""
