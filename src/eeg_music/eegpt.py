@@ -399,7 +399,7 @@ class EegptLightning(LightningModule):
 
 class EegptEmotionClassifier(EegptLightning):
   def __init__(self, config: EegptConfig, num_classes=9):
-    super(EegptLightning, self).__init__(config)
+    super(EegptLightning, self).__init__()
     self.config = config
     if isinstance(self.config.lr_config, float):
       # to access by LearningRateFinder
