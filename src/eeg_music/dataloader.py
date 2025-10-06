@@ -12,6 +12,7 @@ from .data import (
   EegData,
   rereference_trial,
 )
+from .emotion_utils import parse_music_emotion
 from pathlib import Path
 
 
@@ -98,6 +99,7 @@ def mel_create_collate_fn(
 
     if include_info:
       # Gather metadata and trial info for tracing/debugging
+
       info_dict = {
         "dataset": [trial.dataset for trial in trials],
         "subject": [trial.subject for trial in trials],
@@ -106,6 +108,10 @@ def mel_create_collate_fn(
         "trial_id": [trial.trial_id for trial in trials],
         "music_filename": [trial.music_filename.filename for trial in trials],
         "batch_size": len(trials),
+        "emotion": [
+          parse_music_emotion(trial.music_filename.filename, trial.dataset)
+          for trial in trials
+        ],
       }
       # Return dict with eeg, mel, and info
       return {"eeg": eeg_batch, "mel": music_batch, "info": info_dict}
@@ -149,8 +155,8 @@ def create_dataloader(
     drop_last=is_training,  # Drop last batch if incomplete during training
     num_workers=num_workers,
     pin_memory=pin_memory,
-    persistent_workers=True,
-    prefetch_factor=prefetch_factor,
+    persistent_workers=num_workers > 0,  # Only with multiprocessing
+    prefetch_factor=prefetch_factor if num_workers > 0 else None,
     collate_fn=mel_create_collate_fn(include_info=include_info),
   )
 

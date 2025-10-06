@@ -901,6 +901,17 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
           self.assertEqual(len(batch["info"]["trial_id"]), batch_size)
           self.assertEqual(len(batch["info"]["subject"]), batch_size)
 
+          # Verify emotion codes are present
+          self.assertIn("emotion", batch["info"])
+          self.assertEqual(len(batch["info"]["emotion"]), batch_size)
+
+          # Verify emotion codes are parsed (should be integers 1-9 or None)
+          for emotion in batch["info"]["emotion"]:
+            if emotion is not None:
+              self.assertIsInstance(emotion, int)
+              self.assertGreaterEqual(emotion, 1)
+              self.assertLessEqual(emotion, 9)
+
           # Verify EEG has correct number of channels (28 channels after picking)
           self.assertLessEqual(batch["eeg"].shape[1], 64)  # channels
           self.assertGreater(batch["eeg"].shape[2], 0)  # time samples

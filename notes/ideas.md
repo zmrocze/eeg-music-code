@@ -5,3 +5,10 @@
 3. how to pass raw wav to the vocoder? 
  - preprocessing the signal by taking consecutive differences? reasearch: differential entropy
 4. Q: eegpt operates on 250ms patches. how much sense does it make to task it to generate finer grained spectrogram?
+5. give subject+dataset embedding to the model.
+6. try lstm
+7. try reconstructor + different prediction task (ideas?)
+8. emotion classification?
+9. less often auroc
+10. parametric main (in a form of a class?)
+11. 

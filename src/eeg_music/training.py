@@ -389,6 +389,14 @@ def log_hyperparameters(model, dataloaders, config, wandb_logger):
   wandb_logger.log_hyperparams(params_to_log)
 
 
+class MainTraining:
+  def __init__(self, config):
+    self.config = config
+
+  def run(self):
+    pass
+
+
 def main(config=config) -> Tuple[EegptLightning, Trainer, dict]:
   dataloaders = load_and_create_dataloaders(config.data_path, config)
   assert (

@@ -130,31 +130,37 @@ class BaseBCMILoader(ABC, Generic[E]):
     self.data = {}
 
     # Standard 9-point emotional state mapping (3x3 valence x arousal)
+    # AUTHORITATIVE SOURCE: BIDS events.json in bcmi-calibration dataset
+    # See: datasets/bcmi/bcmi-calibration/sub-*/eeg/*_events.json
     self.emotional_states = {
-      1: {"valence": "High", "arousal": "High", "description": "Excited/Happy"},
-      2: {"valence": "High", "arousal": "Low", "description": "Peaceful/Content"},
+      1: {"valence": "Low", "arousal": "Low", "description": "Sad/Depressed"},
+      2: {"valence": "Neutral", "arousal": "Low", "description": "Calm/Relaxed"},
       3: {
+        "valence": "High",
+        "arousal": "Low",
+        "description": "Peaceful/Content",
+      },
+      4: {"valence": "Low", "arousal": "Neutral", "description": "Negative/Unpleasant"},
+      5: {
+        "valence": "Neutral",
+        "arousal": "Neutral",
+        "description": "Neutral/Balanced",
+      },
+      6: {
         "valence": "High",
         "arousal": "Neutral",
         "description": "Positive/Pleasant",
       },
-      4: {"valence": "Low", "arousal": "High", "description": "Angry/Agitated"},
-      5: {"valence": "Low", "arousal": "Low", "description": "Sad/Depressed"},
-      6: {
-        "valence": "Low",
-        "arousal": "Neutral",
-        "description": "Negative/Unpleasant",
-      },
       7: {
-        "valence": "Neutral",
+        "valence": "Low",
         "arousal": "High",
-        "description": "Alert/Activated",
+        "description": "Angry/Agitated",
       },
-      8: {"valence": "Neutral", "arousal": "Low", "description": "Calm/Relaxed"},
+      8: {"valence": "Neutral", "arousal": "High", "description": "Alert/Activated"},
       9: {
-        "valence": "Neutral",
-        "arousal": "Neutral",
-        "description": "Neutral/Balanced",
+        "valence": "High",
+        "arousal": "High",
+        "description": "Excited/Happy",
       },
     }
 
