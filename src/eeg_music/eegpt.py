@@ -416,6 +416,46 @@ class EegptEmotionClassifier(EegptLightning):
     # Set trainable parameters based on config
     self._setup_trainable_parameters()
 
+  def _setup_trainable_parameters(self):
+    """
+    Set trainable parameters for EegptEmotionClassifier.
+    The model structure is different from EegptLightning - it's directly an EEGPTClassifier.
+    """
+    if self.config.trainable is None:
+      # All parameters trainable (default)
+      for param in self.parameters():
+        param.requires_grad = True
+      return
+
+    # Freeze everything first
+    for param in self.parameters():
+      param.requires_grad = False
+
+    # Unfreeze specified components
+    for component in self.config.trainable:
+      if component == "chan_conv":
+        if hasattr(self.model, "chan_conv"):
+          for param in self.model.chan_conv.parameters():
+            param.requires_grad = True
+      elif component == "head":
+        for param in self.model.head.parameters():
+          param.requires_grad = True
+      elif component == "reconstructor":
+        if hasattr(self.model, "reconstructor"):
+          for param in self.model.reconstructor.parameters():
+            param.requires_grad = True
+      elif component == "predictor":
+        if hasattr(self.model, "predictor"):
+          for param in self.model.predictor.parameters():
+            param.requires_grad = True
+      elif component == "target_encoder":
+        for param in self.model.target_encoder.parameters():
+          param.requires_grad = True
+      elif component == "linear":
+        pass
+      else:
+        raise ValueError(f"Unknown trainable component: {component}")
+
   def training_step(self, batch, batch_idx):
     x = batch["eeg"]
     emotion_codes = batch["info"]["emotion"]  # List of emotion codes (1-9 or None)
