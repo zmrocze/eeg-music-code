@@ -24,6 +24,7 @@ from lightning.pytorch.callbacks import (
 )
 from eeg_music.eegpt import (
   EegptLightning,
+  EegptEmotionClassifier,
   EegptConfig,
   LRCosine,
   EEG_WIDTH,
@@ -75,6 +76,11 @@ class TrainingConfig:
     default_factory=lambda: ["cosine", "structural_similarity"]
   )
   auroc_prediction_batch_size: int = 128
+
+  # Dataloader settings
+  include_info: bool = (
+    False  # If True, dataloaders include metadata (e.g., emotion labels)
+  )
 
 
 config = TrainingConfig()
@@ -510,6 +516,53 @@ class MainTraining:
     self.trainer_fit()
     self.trainer_test()
     return self.model, self.trainer, self.dataloaders
+
+
+class EmotionClassifierTraining(MainTraining):
+  """Training class for emotion classification using EegptEmotionClassifier."""
+
+  def __init__(self, config):
+    super().__init__(config)
+    # Ensure include_info is True for emotion classification
+    self.config.include_info = True
+
+  def create_model(self):
+    eegpt_config = EegptConfig(
+      chpt_path=self.config.eegpt_chpt_path,
+      lr_config=self.config.lr_config,
+      use_chan_conv=self.config.use_chan_conv,
+      trainable=self.config.trainable,
+    )
+    self.model = EegptEmotionClassifier(eegpt_config, num_classes=9)
+    freeze_all_except_head_and_adapters(self.model, verbose=True)
+
+  def create_callbacks(self):
+    """Create callbacks without AUROC and spectrogram logging (not applicable for classification)."""
+    save_on_exc = OnExceptionCheckpoint(
+      f"{self.config.save_path}/exc_save",
+    )
+
+    ckpt_callback = ModelCheckpoint(
+      every_n_epochs=self.config.save_model_per_epochs,
+      dirpath=self.config.save_path,
+      save_top_k=2,
+      monitor="val_loss",
+      mode="min",
+      save_last=True,
+    )
+
+    optional_lr_finder = (
+      [LearningRateFinder(min_lr=1e-08, max_lr=1, num_training_steps=100)]
+      if self.config.use_learning_rate_finder
+      else []
+    )
+
+    self.callbacks = [
+      ckpt_callback,
+      RichProgressBar(),
+      save_on_exc,
+      LearningRateMonitor(logging_interval="step"),
+    ] + optional_lr_finder
 
 
 def main(config=config) -> Tuple[EegptLightning, Trainer, dict]:

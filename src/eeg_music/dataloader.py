@@ -41,12 +41,16 @@ def load_and_create_dataloaders(ds_path: Path, config) -> Dict[str, DataLoader]:
     dereferenced_val = dereferenced_tst
   if config.ds_test_repeated_mul > 1:
     dereferenced_tst = RepeatedDataset(dereferenced_tst, config.ds_test_repeated_mul)
+
+  include_info = getattr(config, "include_info", False)
+
   train_dl = create_dataloader(
     dereferenced,
     is_training=True,
     batch_size=config.batch_size,
     num_workers=config.data_loader_num_workers,
     prefetch_factor=config.prefetch_factor,
+    include_info=include_info,
   )
   val_dl = create_dataloader(
     dereferenced_val,
@@ -54,6 +58,7 @@ def load_and_create_dataloaders(ds_path: Path, config) -> Dict[str, DataLoader]:
     batch_size=config.batch_size,
     num_workers=config.data_loader_num_workers,
     prefetch_factor=config.prefetch_factor,
+    include_info=include_info,
   )
   test_dl = create_dataloader(
     dereferenced_tst,
@@ -61,6 +66,7 @@ def load_and_create_dataloaders(ds_path: Path, config) -> Dict[str, DataLoader]:
     batch_size=config.batch_size,
     num_workers=config.data_loader_num_workers,
     prefetch_factor=config.prefetch_factor,
+    include_info=include_info,
   )
 
   return {"train": train_dl, "val": val_dl, "test": test_dl}

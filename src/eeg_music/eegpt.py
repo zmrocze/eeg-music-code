@@ -3,7 +3,7 @@ from downstream.Modules.models.EEGPT_mcae_finetune import EEGPTClassifier
 from lightning.pytorch import LightningModule
 import wandb
 import torch
-from torch.nn import MSELoss
+from torch.nn import CrossEntropyLoss, MSELoss
 from dataclasses import dataclass
 from typing import Union, Optional, List
 
@@ -188,10 +188,9 @@ EEG_WIDTH = 256 * 4
 # "./model_checkpoints/25866970/EEGPT/checkpoint/eegpt_mcae_58chs_4s_large4E.ckpt"
 
 
-def load_model(chpt_path, use_chan_conv) -> EEGPTClassifier:
+def load_model(chpt_path, use_chan_conv, num_classes=0) -> EEGPTClassifier:
   model = EEGPTClassifier(
-    # num_classes,
-    0,
+    num_classes,
     in_channels=len(USING_CHANNELS),
     img_size=[len(USING_CHANNELS), EEG_WIDTH],
     use_channels_names=USING_CHANNELS,
@@ -398,26 +397,66 @@ class EegptLightning(LightningModule):
     return [optimizer], [lr_scheduler]
 
 
-# max_epochs = 200
-# max_lr = 5e-4
-# batch_size=64
-# devices=[0]
+class EegptEmotionClassifier(EegptLightning):
+  def __init__(self, config: EegptConfig, num_classes=9):
+    super(EegptLightning, self).__init__(config)
+    self.config = config
+    if isinstance(self.config.lr_config, float):
+      # to access by LearningRateFinder
+      self.learning_rate = self.config.lr_config
+    self.num_classes = num_classes
+    self.save_hyperparameters()
+    self.model = load_model(
+      chpt_path=self.config.chpt_path,
+      use_chan_conv=self.config.use_chan_conv,
+      num_classes=self.num_classes,
+    )
+    self.loss_fn = CrossEntropyLoss()
 
-# optimizer = torch.optim.AdamW(param_groups, lr=6e-5)
+    # Set trainable parameters based on config
+    self._setup_trainable_parameters()
 
-#         lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=steps_per_epoch,
-#                                                            epochs=max_epochs,
-#                                                            div_factor = 2,
-#                                                            final_div_factor=8,
-#                                                            pct_start = 0.2 ,
-#                                                            )
-#         # lr_scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer, factor=1.)
-#         lr_dict = {
-#             'scheduler': lr_scheduler, # The LR scheduler instance (required)
-#             # The unit of the scheduler's step size, could also be 'step'
-#             'interval': 'step',
-#             'frequency': 1, # The frequency of the scheduler
-#             'monitor': 'valid_loss', # Metric for `ReduceLROnPlateau` to monitor
-#             'strict': True, # Whether to crash the training if `monitor` is not found
-#             'name': None, # Custom name for `LearningRateMonitor` to use
-#         }
+  def training_step(self, batch, batch_idx):
+    x = batch["eeg"]
+    emotion_codes = batch["info"]["emotion"]  # List of emotion codes (1-9 or None)
+    # Convert to class indices (0-8) for CrossEntropyLoss. Subtract 1 to map 1-9 to 0-8
+    y = torch.tensor(
+      [code - 1 if code is not None else 0 for code in emotion_codes],
+      dtype=torch.long,
+      device=x.device,
+    )
+    y_hat = self(x)
+    assert y_hat.shape == (x.shape[0], self.num_classes)
+    loss = self.loss_fn(y_hat, y)
+    self.log(
+      "train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True
+    )
+    return loss
+
+  def validation_step(self, batch, batch_idx):
+    x = batch["eeg"]
+    emotion_codes = batch["info"]["emotion"]  # List of emotion codes (1-9 or None)
+    # Convert to class indices (0-8) for CrossEntropyLoss. Subtract 1 to map 1-9 to 0-8
+    y = torch.tensor(
+      [code - 1 if code is not None else 0 for code in emotion_codes],
+      dtype=torch.long,
+      device=x.device,
+    )
+    y_hat = self(x)
+    loss = self.loss_fn(y_hat, y)
+    self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+
+  def test_step(self, batch, batch_idx):
+    x = batch["eeg"]
+    emotion_codes = batch["info"]["emotion"]  # List of emotion codes (1-9 or None)
+    # Convert to class indices (0-8) for CrossEntropyLoss. Subtract 1 to map 1-9 to 0-8
+    y = torch.tensor(
+      [code - 1 if code is not None else 0 for code in emotion_codes],
+      dtype=torch.long,
+      device=x.device,
+    )
+    y_hat = self(x)
+    loss = self.loss_fn(y_hat, y)
+    self.log(
+      "test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True
+    )
