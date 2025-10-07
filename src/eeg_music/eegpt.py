@@ -9,6 +9,35 @@ from typing import Union, Optional, List
 
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 
+
+class AccuracyCalc:
+  """Simple accuracy calculator that tracks correct predictions and total count."""
+
+  def __init__(self):
+    self.correct = 0
+    self.total = 0
+
+  def update(self, logits: torch.Tensor, targets: torch.Tensor):
+    """Update accuracy with new logits and targets.
+
+    Args:
+      logits: Model output logits (batch_size, num_classes)
+      targets: Ground truth class indices (batch_size,)
+    """
+    predictions = torch.argmax(logits, dim=1)
+    self.correct += (predictions == targets).sum().item()
+    self.total += targets.size(0)
+
+  def compute(self) -> float:
+    """Compute current accuracy."""
+    return self.correct / self.total if self.total > 0 else 0.0
+
+  def reset(self):
+    """Reset counters."""
+    self.correct = 0
+    self.total = 0
+
+
 finetuning_all_ch = [
   "FP1",
   "FPZ",
@@ -494,6 +523,11 @@ class EegptEmotionClassifier(EegptLightning):
     )
     self.loss_fn = CrossEntropyLoss()
 
+    # Accuracy calculators
+    self.train_accuracy = AccuracyCalc()
+    self.val_accuracy = AccuracyCalc()
+    self.test_accuracy = AccuracyCalc()
+
     # Set trainable parameters based on config
     self._setup_trainable_parameters()
 
@@ -511,6 +545,10 @@ class EegptEmotionClassifier(EegptLightning):
     y_hat = self(x)
     assert y_hat.shape == (x.shape[0], self.num_classes)
     loss = self.loss_fn(y_hat, y)
+
+    # Update accuracy
+    self.train_accuracy.update(y_hat, y)
+
     self.log(
       "train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True
     )
@@ -527,6 +565,10 @@ class EegptEmotionClassifier(EegptLightning):
     )
     y_hat = self(x)
     loss = self.loss_fn(y_hat, y)
+
+    # Update accuracy
+    self.val_accuracy.update(y_hat, y)
+
     self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
 
   def test_step(self, batch, batch_idx):
@@ -540,9 +582,31 @@ class EegptEmotionClassifier(EegptLightning):
     )
     y_hat = self(x)
     loss = self.loss_fn(y_hat, y)
+
+    # Update accuracy
+    self.test_accuracy.update(y_hat, y)
+
     self.log(
       "test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True
     )
+
+  def on_train_epoch_end(self):
+    """Log and reset training accuracy at epoch end."""
+    accuracy = self.train_accuracy.compute()
+    self.log("train_accuracy", accuracy, on_epoch=True, prog_bar=True, logger=True)
+    self.train_accuracy.reset()
+
+  def on_validation_epoch_end(self):
+    """Log and reset validation accuracy at epoch end."""
+    accuracy = self.val_accuracy.compute()
+    self.log("val_accuracy", accuracy, on_epoch=True, prog_bar=True, logger=True)
+    self.val_accuracy.reset()
+
+  def on_test_epoch_end(self):
+    """Log and reset test accuracy at epoch end."""
+    accuracy = self.test_accuracy.compute()
+    self.log("test_accuracy", accuracy, on_epoch=True, prog_bar=True, logger=True)
+    self.test_accuracy.reset()
 
 
 class EegptWithLinearEmotionClassifier(EegptEmotionClassifier):

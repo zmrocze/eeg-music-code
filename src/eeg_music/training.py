@@ -346,78 +346,6 @@ class AUROCCallback(Callback):
       raise ValueError(f"Unknown similarity metric: {self.similarity_metric}")
 
 
-class AccuracyCallback(Callback):
-  """Calculate prediction accuracy on validation and test sets.
-
-  Uses running average approach by tracking number of correct predictions
-  and total predictions, then computes accuracy at the end of each epoch.
-  """
-
-  def __init__(self):
-    super().__init__()
-    self.val_correct = 0
-    self.val_total = 0
-    self.test_correct = 0
-    self.test_total = 0
-
-  def _update_accuracy(self, pl_module, batch, correct_attr, total_attr):
-    """Helper to calculate and update accuracy counters."""
-    x = batch["eeg"]
-    emotion_codes = batch["info"]["emotion"]
-    y = torch.tensor(
-      [code - 1 if code is not None else 0 for code in emotion_codes],
-      dtype=torch.long,
-      device=x.device,
-    )
-
-    with torch.no_grad():
-      y_hat = pl_module(x)
-      predictions = torch.argmax(y_hat, dim=1)
-
-    setattr(
-      self, correct_attr, getattr(self, correct_attr) + (predictions == y).sum().item()
-    )
-    setattr(self, total_attr, getattr(self, total_attr) + y.size(0))
-
-  def on_validation_epoch_start(self, trainer, pl_module):
-    """Reset validation counters at the start of validation epoch."""
-    self.val_correct = 0
-    self.val_total = 0
-
-  def on_test_epoch_start(self, trainer, pl_module):
-    """Reset test counters at the start of test epoch."""
-    self.test_correct = 0
-    self.test_total = 0
-
-  def on_validation_batch_end(
-    self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0
-  ):
-    """Calculate accuracy for validation batch and update running counters."""
-    self._update_accuracy(pl_module, batch, "val_correct", "val_total")
-
-  def on_test_batch_end(
-    self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0
-  ):
-    """Calculate accuracy for test batch and update running counters."""
-    self._update_accuracy(pl_module, batch, "test_correct", "test_total")
-
-  def on_validation_epoch_end(self, trainer, pl_module):
-    """Calculate and log validation accuracy at the end of validation epoch."""
-    if self.val_total == 0:
-      return
-
-    accuracy = self.val_correct / self.val_total
-    pl_module.log("val_accuracy", accuracy, on_epoch=True, prog_bar=True, logger=True)
-
-  def on_test_epoch_end(self, trainer, pl_module):
-    """Calculate and log test accuracy at the end of test epoch."""
-    if self.test_total == 0:
-      return
-
-    accuracy = self.test_correct / self.test_total
-    pl_module.log("test_accuracy", accuracy, on_epoch=True, prog_bar=True, logger=True)
-
-
 def log_hyperparameters(model, dataloaders, config, wandb_logger):
   params_to_log = {}
 
@@ -646,7 +574,6 @@ class EmotionClassifierTraining(MainTraining):
       RichProgressBar(),
       save_on_exc,
       LearningRateMonitor(logging_interval="step"),
-      AccuracyCallback(),
     ] + optional_lr_finder
 
 
