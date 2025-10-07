@@ -212,10 +212,10 @@ def load_model(chpt_path, use_chan_conv, num_classes=0) -> EEGPTClassifier:
 
 
 class EegptWithLinear(torch.nn.Module):
-  def __init__(self, model):
+  def __init__(self, model, hidden_dim=256):
     super().__init__()
     self.model = model
-    self.linear = ResidualLinear(model.embed_dim, 256, 4 * 128)
+    self.linear = ResidualLinear(model.embed_dim, 4 * 128, hidden_dim)
 
   def forward(self, x):
     x = self.model(x, return_patch_tokens=True)
@@ -230,8 +230,27 @@ class EegptWithLinear(torch.nn.Module):
     return cls(model)
 
 
+class EegptWithLinearClassifier(torch.nn.Module):
+  def __init__(self, model, hidden_dim=256, num_classes=9):
+    super().__init__()
+    self.model = model
+    self.num_classes = num_classes
+    self.hidden_dim = hidden_dim
+    self.linear = ResidualLinear(model.embed_dim, num_classes, hidden_dim=hidden_dim)
+
+  def forward(self, x):
+    x = self.model(x, return_patch_tokens=False)
+    x = self.linear(x)  # B x num_classes
+    return x
+
+  @classmethod
+  def load_from_checkpoint(cls, chpt_path, use_chan_conv=True):
+    model = load_model(chpt_path, use_chan_conv=use_chan_conv, num_classes=0)
+    return cls(model)
+
+
 class ResidualLinear(torch.nn.Module):
-  def __init__(self, input_dim, hidden_dim, output_dim):
+  def __init__(self, input_dim, output_dim, hidden_dim=256):
     super(ResidualLinear, self).__init__()
     # like in eegptclassifier
     self.linear1 = torch.nn.Linear(input_dim, hidden_dim)
@@ -329,9 +348,17 @@ class EegptLightning(LightningModule):
     Set requires_grad for parameters based on config.requiring_grad.
     If requiring_grad is None, all parameters have requires_grad=True.
     Otherwise, only the specified components have requires_grad=True.
+    Handles both EegptWithLinear wrapper and direct EEGPTClassifier models.
     """
-    eegpt_with_linear = self.model
-    eegpt_classifier = self.model.model
+    # Check if model is wrapped (EegptWithLinear) or direct (EEGPTClassifier)
+    if hasattr(self.model, "model") and hasattr(self.model, "linear"):
+      # EegptWithLinear wrapper
+      eegpt_with_linear = self.model
+      eegpt_classifier = self.model.model
+    else:
+      # Direct EEGPTClassifier
+      eegpt_with_linear = None
+      eegpt_classifier = self.model
 
     if self.config.requiring_grad is None:
       # All parameters have requires_grad=True (default)
@@ -346,24 +373,25 @@ class EegptLightning(LightningModule):
     # Set requires_grad=True for specified components
     for component in self.config.requiring_grad:
       if component == "chan_conv":
-        for param in eegpt_classifier.chan_conv.parameters():
+        for param in eegpt_classifier.chan_conv.parameters():  # pyright: ignore[reportAttributeAccessIssue]
           param.requires_grad = True
       elif component == "linear":
-        for param in eegpt_with_linear.linear.parameters():
-          param.requires_grad = True
+        if eegpt_with_linear is not None:
+          for param in eegpt_with_linear.linear.parameters():  # pyright: ignore[reportAttributeAccessIssue]
+            param.requires_grad = True
       elif component == "head":
-        for param in eegpt_classifier.head.parameters():
+        for param in eegpt_classifier.head.parameters():  # pyright: ignore[reportAttributeAccessIssue]
           param.requires_grad = True
       elif component == "reconstructor":
         if hasattr(eegpt_classifier, "reconstructor"):
-          for param in eegpt_classifier.reconstructor.parameters():
+          for param in eegpt_classifier.reconstructor.parameters():  # pyright: ignore[reportAttributeAccessIssue]
             param.requires_grad = True
       elif component == "predictor":
         if hasattr(eegpt_classifier, "predictor"):
-          for param in eegpt_classifier.predictor.parameters():
+          for param in eegpt_classifier.predictor.parameters():  # pyright: ignore[reportAttributeAccessIssue]
             param.requires_grad = True
       elif component == "target_encoder":
-        for param in eegpt_classifier.target_encoder.parameters():
+        for param in eegpt_classifier.target_encoder.parameters():  # pyright: ignore[reportAttributeAccessIssue]
           param.requires_grad = True
       else:
         raise ValueError(f"Unknown requiring_grad component: {component}")
@@ -373,9 +401,17 @@ class EegptLightning(LightningModule):
     Get parameters to pass to optimizer based on config.trainable.
     If trainable is None, returns all parameters with requires_grad=True.
     Otherwise, returns only parameters from specified components.
+    Handles both EegptWithLinear wrapper and direct EEGPTClassifier models.
     """
-    eegpt_with_linear = self.model
-    eegpt_classifier = self.model.model
+    # Check if model is wrapped (EegptWithLinear) or direct (EEGPTClassifier)
+    if hasattr(self.model, "model") and hasattr(self.model, "linear"):
+      # EegptWithLinear wrapper
+      eegpt_with_linear = self.model
+      eegpt_classifier = self.model.model
+    else:
+      # Direct EEGPTClassifier
+      eegpt_with_linear = None
+      eegpt_classifier = self.model
 
     if self.config.trainable is None:
       # Return all parameters with requires_grad=True
@@ -385,19 +421,20 @@ class EegptLightning(LightningModule):
     trainable_params = []
     for component in self.config.trainable:
       if component == "chan_conv":
-        trainable_params.extend(eegpt_classifier.chan_conv.parameters())
+        trainable_params.extend(eegpt_classifier.chan_conv.parameters())  # pyright: ignore[reportAttributeAccessIssue]
       elif component == "linear":
-        trainable_params.extend(eegpt_with_linear.linear.parameters())
+        if eegpt_with_linear is not None:
+          trainable_params.extend(eegpt_with_linear.linear.parameters())  # pyright: ignore[reportAttributeAccessIssue]
       elif component == "head":
-        trainable_params.extend(eegpt_classifier.head.parameters())
+        trainable_params.extend(eegpt_classifier.head.parameters())  # pyright: ignore[reportAttributeAccessIssue]
       elif component == "reconstructor":
         if hasattr(eegpt_classifier, "reconstructor"):
-          trainable_params.extend(eegpt_classifier.reconstructor.parameters())
+          trainable_params.extend(eegpt_classifier.reconstructor.parameters())  # pyright: ignore[reportAttributeAccessIssue]
       elif component == "predictor":
         if hasattr(eegpt_classifier, "predictor"):
-          trainable_params.extend(eegpt_classifier.predictor.parameters())
+          trainable_params.extend(eegpt_classifier.predictor.parameters())  # pyright: ignore[reportAttributeAccessIssue]
       elif component == "target_encoder":
-        trainable_params.extend(eegpt_classifier.target_encoder.parameters())
+        trainable_params.extend(eegpt_classifier.target_encoder.parameters())  # pyright: ignore[reportAttributeAccessIssue]
       else:
         raise ValueError(f"Unknown trainable component: {component}")
     return iter(trainable_params)
@@ -460,75 +497,7 @@ class EegptEmotionClassifier(EegptLightning):
     # Set trainable parameters based on config
     self._setup_trainable_parameters()
 
-  def _setup_trainable_parameters(self):
-    """
-    Set requires_grad for parameters based on config.requiring_grad.
-    The model structure is different from EegptLightning - it's directly an EEGPTClassifier.
-    """
-    eegpt_classifier = self.model
-
-    if self.config.requiring_grad is None:
-      # All parameters have requires_grad=True (default)
-      for param in self.parameters():
-        param.requires_grad = True
-      return
-
-    # Set requires_grad=False for everything first
-    for param in self.parameters():
-      param.requires_grad = False
-
-    # Set requires_grad=True for specified components
-    for component in self.config.requiring_grad:
-      if component == "chan_conv":
-        for param in eegpt_classifier.chan_conv.parameters():
-          param.requires_grad = True
-      elif component == "head":
-        for param in eegpt_classifier.head.parameters():
-          param.requires_grad = True
-      elif component == "reconstructor":
-        if hasattr(eegpt_classifier, "reconstructor"):
-          for param in eegpt_classifier.reconstructor.parameters():
-            param.requires_grad = True
-      elif component == "predictor":
-        if hasattr(eegpt_classifier, "predictor"):
-          for param in eegpt_classifier.predictor.parameters():
-            param.requires_grad = True
-      elif component == "target_encoder":
-        for param in eegpt_classifier.target_encoder.parameters():
-          param.requires_grad = True
-      else:
-        raise ValueError(f"Unknown requiring_grad component: {component}")
-
-  def _get_trainable_parameters(self):
-    """
-    Get parameters to pass to optimizer based on config.trainable.
-    If trainable is None, returns all parameters with requires_grad=True.
-    Otherwise, returns only parameters from specified components.
-    """
-    eegpt_classifier = self.model
-
-    if self.config.trainable is None:
-      # Return all parameters with requires_grad=True
-      return filter(lambda p: p.requires_grad, self.parameters())
-
-    # Collect parameters from specified components
-    trainable_params = []
-    for component in self.config.trainable:
-      if component == "chan_conv":
-        trainable_params.extend(eegpt_classifier.chan_conv.parameters())
-      elif component == "head":
-        trainable_params.extend(eegpt_classifier.head.parameters())
-      elif component == "reconstructor":
-        if hasattr(eegpt_classifier, "reconstructor"):
-          trainable_params.extend(eegpt_classifier.reconstructor.parameters())
-      elif component == "predictor":
-        if hasattr(eegpt_classifier, "predictor"):
-          trainable_params.extend(eegpt_classifier.predictor.parameters())
-      elif component == "target_encoder":
-        trainable_params.extend(eegpt_classifier.target_encoder.parameters())
-      else:
-        raise ValueError(f"Unknown trainable component: {component}")
-    return iter(trainable_params)
+  # _setup_trainable_parameters and _get_trainable_parameters are inherited from EegptLightning
 
   def training_step(self, batch, batch_idx):
     x = batch["eeg"]
@@ -574,3 +543,26 @@ class EegptEmotionClassifier(EegptLightning):
     self.log(
       "test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True
     )
+
+
+class EegptWithLinearEmotionClassifier(EegptEmotionClassifier):
+  """
+  Emotion classifier variant that uses EegptWithLinear (with ResidualLinear layer).
+  Inherits from EegptEmotionClassifier and overrides only the __init__ method.
+  """
+
+  def __init__(self, config: EegptConfig, num_classes=9, hidden_dim=256):
+    LightningModule.__init__(self)
+    self.config = config
+    if isinstance(self.config.lr_config, float):
+      # to access by LearningRateFinder
+      self.learning_rate = self.config.lr_config
+    self.save_hyperparameters()
+    self.model = EegptWithLinearClassifier.load_from_checkpoint(
+      self.config.chpt_path,
+      use_chan_conv=self.config.use_chan_conv,
+    )
+    self.loss_fn = CrossEntropyLoss()
+
+    # Set trainable parameters based on config
+    self._setup_trainable_parameters()
