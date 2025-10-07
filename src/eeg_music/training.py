@@ -66,6 +66,7 @@ class TrainingConfig:
   use_learning_rate_finder: bool = False
 
   trainable: Optional[List[str]] = field(default_factory=lambda: ["linear", "head"])
+  requiring_grad: Optional[List[str]] = None
 
   # use_chan_conv: bool = True
   use_chan_conv: bool = False
@@ -427,6 +428,7 @@ class MainTraining:
       lr_config=self.config.lr_config,
       use_chan_conv=self.config.use_chan_conv,
       trainable=self.config.trainable,
+      requiring_grad=self.config.requiring_grad,
     )
     self.model = EegptLightning(eegpt_config)
     freeze_all_except_head_and_adapters(self.model, verbose=True)
@@ -541,6 +543,7 @@ class EmotionClassifierTraining(MainTraining):
       lr_config=self.config.lr_config,
       use_chan_conv=self.config.use_chan_conv,
       trainable=self.config.trainable,
+      requiring_grad=self.config.requiring_grad,
     )
     self.model = EegptEmotionClassifier(eegpt_config, num_classes=9)
     # freeze_all_except_head_and_adapters(self.model, verbose=True)
