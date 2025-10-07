@@ -25,6 +25,7 @@ from lightning.pytorch.callbacks import (
 from eeg_music.eegpt import (
   EegptLightning,
   EegptEmotionClassifier,
+  EegptWithLinearEmotionClassifier,
   EegptConfig,
   LRCosine,
   EEG_WIDTH,
@@ -81,6 +82,11 @@ class TrainingConfig:
   # Dataloader settings
   include_info: bool = (
     False  # If True, dataloaders include metadata (e.g., emotion labels)
+  )
+
+  # Emotion classifier model selection
+  emotion_classifier_model: Literal["base", "linear"] = (
+    "base"  # "base" for EegptEmotionClassifier, "linear" for EegptWithLinearEmotionClassifier
   )
 
 
@@ -545,7 +551,12 @@ class EmotionClassifierTraining(MainTraining):
       trainable=self.config.trainable,
       requiring_grad=self.config.requiring_grad,
     )
-    self.model = EegptEmotionClassifier(eegpt_config, num_classes=9)
+
+    # Select model based on config
+    if self.config.emotion_classifier_model == "linear":
+      self.model = EegptWithLinearEmotionClassifier(eegpt_config, num_classes=9)
+    else:
+      self.model = EegptEmotionClassifier(eegpt_config, num_classes=9)
     # freeze_all_except_head_and_adapters(self.model, verbose=True)
 
   def create_callbacks(self):
