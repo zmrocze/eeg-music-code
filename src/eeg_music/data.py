@@ -1220,8 +1220,16 @@ def melspectrogram_figure(
   mel: MelRaw,
   cmap: str = "magma",
   title: str = "Mel-spectrogram",
+  onset_times: Optional[np.ndarray] = None,
 ):
-  """Build and return a matplotlib Figure with the mel-spectrogram plot."""
+  """Build and return a matplotlib Figure with the mel-spectrogram plot.
+
+  Args:
+    mel: MelRaw spectrogram data
+    cmap: colormap for the spectrogram
+    title: plot title
+    onset_times: optional array of sample indices marking note beginnings
+  """
   S = mel.mel
   fig, ax = plt.subplots(figsize=(8, 3))
   img = lbd.specshow(
@@ -1237,17 +1245,27 @@ def melspectrogram_figure(
   ax.set(title=title + (" (dB)" if mel.to_db else ""))
   cbar = fig.colorbar(img, ax=ax)
   cbar.set_label("dB" if mel.to_db else "power")
+
+  # Mark onset timestamps if provided
+  if onset_times is not None and len(onset_times) > 0:
+    # Draw vertical lines at onset times
+    for onset_time in onset_times:
+      ax.axvline(x=onset_time, color="white", alpha=0.4, linewidth=0.8, linestyle="--")
+
   fig.tight_layout()
   return fig
 
 
-def mkplot_melspectrogram(wav: WavRAW, cmap="magma", title="Mel-spectrogram", **kwargs):
+def mkplot_melspectrogram(
+  wav: WavRAW, cmap="magma", title="Mel-spectrogram", onset_times=None, **kwargs
+):
   """Plot the mel-spectrogram and show it. Returns the created Figure."""
   mel = wavraw_to_melspectrogram(wav, **kwargs)
   fig = melspectrogram_figure(
     mel,
     cmap=cmap,
     title=title,
+    onset_times=onset_times,
   )
   # plt.show()
   return fig

@@ -16,6 +16,7 @@ dependencies = [
   "matplotlib",
   "pandas",
   "librosa",
+  "essentia",
   "resampy",
   # "jupyterlab",
   "ipykernel",
