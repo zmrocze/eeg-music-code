@@ -36,8 +36,8 @@ class MusicData(ABC):
   """Abstract base class for music data."""
 
   @abstractmethod
-  def get_music(self) -> "WavRAW | MelRaw":
-    """Get the music as WavRAW or MelRaw data."""
+  def get_music(self) -> "WavRAW | MelRaw | NoteOnsets":
+    """Get the music as WavRAW, MelRaw, or NoteOnsets data."""
     pass
 
   @abstractmethod
@@ -278,6 +278,47 @@ class MelRaw(MusicData):
     return self
 
 
+@dataclass
+class NoteOnsets(MusicData):
+  """Data class containing note onset times detected from audio."""
+
+  onset_times: NDArray[np.floating]  # array of onset times in seconds
+  sample_rate: int  # for consistency with other music types
+  duration_seconds: float  # total duration of the music
+
+  def length_seconds(self) -> float:
+    return self.duration_seconds
+
+  def save(self, filepath: Path) -> None:
+    """Save onset times to a numpy file."""
+    # Ensure .npz extension
+    if filepath.suffix != ".npz":
+      filepath = filepath.with_suffix(filepath.suffix + ".npz")
+    np.savez_compressed(
+      filepath,
+      onset_times=self.onset_times,
+      sample_rate=self.sample_rate,
+      duration_seconds=self.duration_seconds,
+    )
+
+  def get_music(self) -> "NoteOnsets":
+    return self
+
+  def filter_onsets_in_time_range(
+    self, start_time: float, end_time: float
+  ) -> "NoteOnsets":
+    """Return a new NoteOnsets with only onsets within the time range [start_time, end_time)."""
+    mask = (self.onset_times >= start_time) & (self.onset_times < end_time)
+    # Shift onset times to be relative to start_time
+    filtered_onsets = self.onset_times[mask] - start_time
+    new_duration = end_time - start_time
+    return NoteOnsets(
+      onset_times=filtered_onsets,
+      sample_rate=self.sample_rate,
+      duration_seconds=new_duration,
+    )
+
+
 # MelOrWav = MelRaw | WavRAW  # type alias for external use
 
 # helper functions (optional convenience)
@@ -336,6 +377,30 @@ class OnDiskMel(MusicData):
 
   def save(self, filepath: Path) -> None:
     # Ensure .npz extension for consistency with MelRaw.save()
+    if filepath.suffix != ".npz":
+      filepath = filepath.with_suffix(filepath.suffix + ".npz")
+    shutil.copy2(self.filepath, filepath)
+
+
+@dataclass
+class OnDiskOnsets(MusicData):
+  """Note onsets data backed by a .npz file on disk.
+
+  Expected archive keys: onset_times, sample_rate, duration_seconds.
+  """
+
+  filepath: Path
+
+  def get_music(self) -> NoteOnsets:
+    d = np.load(self.filepath)
+    return NoteOnsets(
+      onset_times=d["onset_times"],
+      sample_rate=int(d["sample_rate"]),
+      duration_seconds=float(d["duration_seconds"]),
+    )
+
+  def save(self, filepath: Path) -> None:
+    # Ensure .npz extension for consistency with NoteOnsets.save()
     if filepath.suffix != ".npz":
       filepath = filepath.with_suffix(filepath.suffix + ".npz")
     shutil.copy2(self.filepath, filepath)
@@ -414,7 +479,7 @@ class TrialData(Generic[E, M]):
   eeg_data: E
   music_data: M
 
-  def load_to_mem(self) -> "TrialData[RawEeg, WavRAW | MelRaw]":
+  def load_to_mem(self) -> "TrialData[RawEeg, WavRAW | MelRaw | NoteOnsets]":
     """Load any on-disk data into memory, returning a new TrialData instance."""
     return TrialData(
       dataset=self.dataset,
@@ -798,11 +863,21 @@ class EEGMusicDataset(torchdata.Dataset):
           # Try .wav.npz version
           npz_path = expected_path.with_suffix(".wav.npz")
           if npz_path.exists():
-            dataset.music_collection[music_ref] = OnDiskMel(filepath=npz_path)
+            # Check if it's mel or onsets by inspecting keys
+            with np.load(npz_path) as data:
+              if "onset_times" in data:
+                dataset.music_collection[music_ref] = OnDiskOnsets(filepath=npz_path)
+              else:
+                dataset.music_collection[music_ref] = OnDiskMel(filepath=npz_path)
           else:
             dataset.music_collection[music_ref] = OnDiskMusic(filepath=expected_path)
         elif expected_path.suffix == ".npz":
-          dataset.music_collection[music_ref] = OnDiskMel(filepath=expected_path)
+          # Check if it's mel or onsets by inspecting keys
+          with np.load(expected_path) as data:
+            if "onset_times" in data:
+              dataset.music_collection[music_ref] = OnDiskOnsets(filepath=expected_path)
+            else:
+              dataset.music_collection[music_ref] = OnDiskMel(filepath=expected_path)
         else:
           dataset.music_collection[music_ref] = OnDiskMusic(filepath=expected_path)
 
@@ -905,12 +980,12 @@ def prepare_trial(
   apply_mel: Optional[MelParams] = None,
   # remove_channels: Optional[List[str]] = None,
   pick_channels: Optional[List[str]] = None,
-) -> TrialData[RawEeg, WavRAW | MelRaw]:
+) -> TrialData[RawEeg, WavRAW | MelRaw | NoteOnsets]:
   """Set common length between music and eeg, resample eeg and filter eeg, transform music to mel spectrogram.
 
   Optional music resampling, applied before mel transform if any.
   apply_mel: None -> keep music type; dict -> parameters for mel transform (see helper.wavraw_to_melspectrogram args).
-  Supports WavRAW and MelRaw music types.
+  Supports WavRAW, MelRaw, and NoteOnsets music types.
   """
 
   eeg: BaseRaw = trial.eeg_data.get_eeg().raw_eeg
@@ -941,6 +1016,10 @@ def prepare_trial(
       music_cropped = MelRaw(
         mel[:, :max_frames], sr, hop, fmin=fmin, fmax=fmax, to_db=to_db
       )
+    case NoteOnsets(onset_times=_, sample_rate=sr, duration_seconds=_):
+      assert apply_mel is None, "Can't apply_mel if the input is NoteOnsets"
+      # Filter onsets to keep only those within [0, min_len)
+      music_cropped = music.filter_onsets_in_time_range(0.0, min_len)
 
   if eeg_l_freq is not None or eeg_h_freq is not None:
     eeg: BaseRaw = cast(BaseRaw, eeg.filter(l_freq=eeg_l_freq, h_freq=eeg_h_freq))
@@ -1141,6 +1220,14 @@ class StratifiedSamplingDataset(EEGMusicDataset):
           fmin=fmin,
           fmax=fmax,
           to_db=to_db,
+        )
+
+      case NoteOnsets(_, sample_rate, _):
+        # Calculate start and end times for this slice
+        start_time_sec = random_start / eeg_raw.info["sfreq"]
+        end_time_sec = start_time_sec + float(self.trial_length_secs)
+        return_music = music_obj.filter_onsets_in_time_range(
+          start_time_sec, end_time_sec
         )
 
     trial: TrialData[EegData, MusicData] = TrialData(

@@ -11,15 +11,21 @@ from eeg_music.data import (
   copy_from_dataloader_into_dir,
   OnDiskMusic,
   OnDiskMel,
+  OnDiskOnsets,
   wavraw_to_melspectrogram,
   MelRaw,
+  WavRAW,
+  NoteOnsets,
   MappedDataset,
   StratifiedSamplingDataset,
   prepare_trial,
   rereference_trial,
   MelParams,
-  WavRAW,
   RepeatedDataset,
+)
+from eeg_music.onset_conversion import (
+  trial_wavraw_to_noteonsets,
+  trial_melraw_to_noteonsets,
 )
 from eeg_music.dataloader import mel_create_collate_fn
 from fractions import Fraction
@@ -596,7 +602,76 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
 
         return self._copy_and_load_combined_dataset(action)
 
-  # 10. Test complex pipeline: mapped(prepare_trial) -> stratified -> mapped(rereference_trial)
+  # 10a. Test NoteOnsets with WAV
+  def test_noteonsets_from_wav(self):
+    """Test NoteOnsets: prepare_trial (wav) -> convert to onsets -> save/load -> stratified sampling."""
+
+    def action(base_dataset):
+      self._test_noteonsets_pipeline(
+        base_dataset,
+        prepare_fn=lambda t: prepare_trial(t, eeg_resample=256),
+        convert_fn=trial_wavraw_to_noteonsets,
+      )
+
+    return self._copy_and_load_combined_dataset(action)
+
+  # 10b. Test NoteOnsets with Mel
+  def test_noteonsets_from_mel(self):
+    """Test NoteOnsets: prepare_trial (mel) -> convert to onsets -> save/load -> stratified sampling."""
+
+    def action(base_dataset):
+      self._test_noteonsets_pipeline(
+        base_dataset,
+        prepare_fn=lambda t: prepare_trial(
+          t, eeg_resample=256, apply_mel=MelParams(n_mels=128)
+        ),
+        convert_fn=trial_melraw_to_noteonsets,
+      )
+
+    return self._copy_and_load_combined_dataset(action)
+
+  def _test_noteonsets_pipeline(self, base_dataset, prepare_fn, convert_fn):
+    """Helper to test NoteOnsets pipeline with different music types."""
+    # Step 1: Prepare trial and convert to NoteOnsets
+    prepared_trial = prepare_fn(base_dataset[0])
+    onset_trial = convert_fn(prepared_trial)
+    music = onset_trial.music_data.get_music()
+    self.assertIsInstance(music, NoteOnsets)
+
+    if isinstance(music, NoteOnsets):  # Type narrowing for linter
+      self.assertGreater(len(music.onset_times), 0)
+      self.assertTrue(np.all(music.onset_times >= 0.0))
+      self.assertTrue(np.all(music.onset_times < music.duration_seconds))
+
+      # Step 2: Save/load roundtrip for NoteOnsets
+      with tempfile.TemporaryDirectory() as temp_dir:
+        onset_path = Path(temp_dir) / "test.npz"
+        music.save(onset_path)
+        reloaded = OnDiskOnsets(onset_path).get_music()
+        self.assertTrue(np.allclose(reloaded.onset_times, music.onset_times))
+        self.assertAlmostEqual(
+          reloaded.duration_seconds, music.duration_seconds, places=5
+        )
+
+    # Step 3: NoteOnsets with StratifiedSamplingDataset
+    onset_dataset = MappedDataset(
+      base_dataset,
+      lambda t: convert_fn(prepare_fn(t)),  # type: ignore[arg-type]
+    )
+    stratified = StratifiedSamplingDataset(
+      onset_dataset, n_strata=2, trial_length_secs=Fraction(4, 1)
+    )
+    trial_strat = stratified[0]
+    music_strat = trial_strat.music_data.get_music()
+    self.assertIsInstance(music_strat, NoteOnsets)
+
+    if isinstance(music_strat, NoteOnsets):  # Type narrowing for linter
+      self.assertAlmostEqual(music_strat.duration_seconds, 4.0, delta=0.1)
+      if len(music_strat.onset_times) > 0:
+        self.assertTrue(np.all(music_strat.onset_times >= 0.0))
+        self.assertTrue(np.all(music_strat.onset_times < music_strat.duration_seconds))
+
+  # 11. Test complex pipeline: mapped(prepare_trial) -> stratified -> mapped(rereference_trial)
   def test_complex_pipeline_with_save_load(self):
     """Test a complex dataset processing pipeline with save/load roundtrip.
 
