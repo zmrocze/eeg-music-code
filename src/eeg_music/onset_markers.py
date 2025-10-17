@@ -31,6 +31,12 @@ def detect_onsets_wavraw(
   Returns:
       numpy array of onset times in seconds
   """
+
+  # ensure 1d wav array, mean matches plots of wavraw_to_melspectrogram
+  wav.raw_data = (
+    wav.raw_data if wav.raw_data.ndim == 1 else np.mean(wav.raw_data, axis=1)
+  )
+
   # Initialize onset detection algorithm
   # Convert sample_rate to float for Essentia compatibility
   od = OnsetDetection(method=method, sampleRate=float(wav.sample_rate))
@@ -76,6 +82,9 @@ def detect_onsets_melraw(
   Returns:
       numpy array of onset times in seconds
   """
+
+  raise NotImplementedError("detect_onsets_melraw is not implemented")
+
   # For mel spectrograms, we need to work with the spectrogram directly
   # or reconstruct audio. Since Essentia's OnsetDetection works on magnitude/phase,
   # we'll use a simpler approach: detect onsets from spectral flux in mel domain

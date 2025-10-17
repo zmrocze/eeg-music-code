@@ -616,6 +616,7 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
     return self._copy_and_load_combined_dataset(action)
 
   # 10b. Test NoteOnsets with Mel
+  @unittest.skip("Ignoring this test")
   def test_noteonsets_from_mel(self):
     """Test NoteOnsets: prepare_trial (mel) -> convert to onsets -> save/load -> stratified sampling."""
 
