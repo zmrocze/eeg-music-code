@@ -1222,7 +1222,7 @@ class StratifiedSamplingDataset(EEGMusicDataset):
           to_db=to_db,
         )
 
-      case NoteOnsets(_, sample_rate, _):
+      case NoteOnsets(_, _, _):
         # Calculate start and end times for this slice
         start_time_sec = random_start / eeg_raw.info["sfreq"]
         end_time_sec = start_time_sec + float(self.trial_length_secs)
