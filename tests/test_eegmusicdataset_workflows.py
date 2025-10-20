@@ -964,14 +964,14 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
         for batch in train_batches:
           # Verify batch structure
           self.assertIn("eeg", batch)
-          self.assertIn("mel", batch)
+          self.assertIn("music", batch)
           self.assertIn(
             "info", batch
           )  # mel_create_collate_fn uses 'info' not 'metadata'
 
           # Verify batch dimensions
           self.assertEqual(batch["eeg"].shape[0], batch_size)  # batch dimension
-          self.assertEqual(batch["mel"].shape[0], batch_size)
+          self.assertEqual(batch["music"].shape[0], batch_size)
 
           # Verify metadata
           self.assertEqual(len(batch["info"]["trial_id"]), batch_size)
@@ -992,9 +992,9 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
           self.assertLessEqual(batch["eeg"].shape[1], 64)  # channels
           self.assertGreater(batch["eeg"].shape[2], 0)  # time samples
 
-          # Verify mel has correct shape
-          self.assertEqual(batch["mel"].shape[1], 128)  # n_mels
-          self.assertGreater(batch["mel"].shape[2], 0)  # time frames
+          # Verify music has correct shape
+          self.assertEqual(batch["music"].shape[1], 128)  # n_mels
+          self.assertGreater(batch["music"].shape[2], 0)  # time frames
 
         # Test validation loader
         val_batches = list(val_loader)

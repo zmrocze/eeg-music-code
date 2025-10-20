@@ -22,7 +22,7 @@ def test_auroc_callback_batched_prediction():
   # Mock the trainer and dataloaders
   trainer = Mock()
   trainer.current_epoch = 0
-  trainer.val_dataloaders = [{"eeg": all_x, "mel": all_y}]
+  trainer.val_dataloaders = [{"eeg": all_x, "music": all_y}]
 
   # Instantiate the callback with a small batch size for testing
   callback = AUROCCallback(auroc_every_n_epochs=1, prediction_batch_size=10)

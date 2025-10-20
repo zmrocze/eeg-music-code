@@ -63,7 +63,7 @@ def test_model_output_shape():
   with torch.no_grad():
     output = model(batch["eeg"])
 
-  assert output.shape == batch["mel"].shape, (
+  assert output.shape == batch["music"].shape, (
     f"Model output shape {output.shape} does not match "
-    f"mel spectrogram shape {batch['mel'].shape}"
+    f"music spectrogram shape {batch['music'].shape}"
   )
