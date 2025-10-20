@@ -152,7 +152,7 @@ class SpectrogramLoggingCallback(Callback):
     """Log spectrograms at the end of each validation batch."""
     if batch_idx == self.val_log_batch_idx:
       x = batch["eeg"]
-      y = batch["mel"]
+      y = batch["music"]
       y_hat = pl_module(x)
       log_spectrograms(pl_module, y_hat, y, batch_idx, stage="val")
 
@@ -162,7 +162,7 @@ class SpectrogramLoggingCallback(Callback):
     """Log spectrograms at the end of each test batch."""
     if batch_idx == self.test_log_batch_idx:
       x = batch["eeg"]
-      y = batch["mel"]
+      y = batch["music"]
       y_hat = pl_module(x)
       log_spectrograms(pl_module, y_hat, y, batch_idx, stage="test")
 
@@ -214,7 +214,7 @@ class AUROCCallback(Callback):
     with torch.no_grad():
       for batch in trainer.val_dataloaders:
         x = batch["eeg"].to(pl_module.device)
-        y = batch["mel"].to(pl_module.device)
+        y = batch["music"].to(pl_module.device)
         all_x.append(x)
         all_y.append(y)
 

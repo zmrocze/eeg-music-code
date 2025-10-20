@@ -1,15 +1,17 @@
 from fractions import Fraction
 import torch
 from torch.utils.data import DataLoader
-from typing import List, Dict, Callable, Any
+from typing import List, Dict, Callable, Any, Sequence
 from .data import (
   EEGMusicDataset,
   MappedDataset,
   MelRaw,
+  NoteOnsets,
   RepeatedDataset,
   StratifiedSamplingDataset,
   TrialData,
   EegData,
+  WavRAW,
   rereference_trial,
 )
 from .emotion_utils import parse_music_emotion
@@ -28,7 +30,9 @@ def after_loaded_ds(ds):
   return dereferenced
 
 
-def load_and_create_dataloaders(ds_path: Path, config) -> Dict[str, DataLoader]:
+def load_and_create_dataloaders(
+  ds_path: Path, config, collate_fn=None
+) -> Dict[str, DataLoader]:
   # Path("./datasets/bcmi_combined_prepared_mel_28ch")
   ds = EEGMusicDataset.load_ondisk(ds_path)
   train_ds, val_ds, test_ds = ds.subject_wise_split(
@@ -43,6 +47,8 @@ def load_and_create_dataloaders(ds_path: Path, config) -> Dict[str, DataLoader]:
     dereferenced_tst = RepeatedDataset(dereferenced_tst, config.ds_test_repeated_mul)
 
   include_info = getattr(config, "include_info", False)
+  if collate_fn is None:
+    collate_fn = mel_create_collate_fn(include_info=include_info)
 
   train_dl = create_dataloader(
     dereferenced,
@@ -50,7 +56,7 @@ def load_and_create_dataloaders(ds_path: Path, config) -> Dict[str, DataLoader]:
     batch_size=config.batch_size,
     num_workers=config.data_loader_num_workers,
     prefetch_factor=config.prefetch_factor,
-    include_info=include_info,
+    collate_fn=collate_fn,
   )
   val_dl = create_dataloader(
     dereferenced_val,
@@ -58,7 +64,7 @@ def load_and_create_dataloaders(ds_path: Path, config) -> Dict[str, DataLoader]:
     batch_size=config.batch_size,
     num_workers=config.data_loader_num_workers,
     prefetch_factor=config.prefetch_factor,
-    include_info=include_info,
+    collate_fn=collate_fn,
   )
   test_dl = create_dataloader(
     dereferenced_tst,
@@ -66,13 +72,14 @@ def load_and_create_dataloaders(ds_path: Path, config) -> Dict[str, DataLoader]:
     batch_size=config.batch_size,
     num_workers=config.data_loader_num_workers,
     prefetch_factor=config.prefetch_factor,
-    include_info=include_info,
+    collate_fn=collate_fn,
   )
 
   return {"train": train_dl, "val": val_dl, "test": test_dl}
 
 
-def mel_create_collate_fn(
+def create_collate_fn(
+  music_batch_fn: Callable[[Sequence[MelRaw | WavRAW | NoteOnsets]], Any],
   include_info: bool = False,
 ) -> Callable[
   [List[TrialData[EegData, MelRaw]]], Dict[str, torch.Tensor | Dict[str, Any]]
@@ -94,14 +101,11 @@ def mel_create_collate_fn(
       torch.tensor(trial.eeg_data.get_eeg().raw_eeg.get_data(), dtype=torch.float32)
       for trial in trials
     ]
-    music = [
-      torch.tensor(getattr(trial.music_data.get_music(), "mel"), dtype=torch.float32)
-      for trial in trials
-    ]
+    music = [trial.music_data.get_music() for trial in trials]
 
     # Stack tensors along batch dimension
     eeg_batch = torch.stack(eegs)
-    music_batch = torch.stack(music)
+    music_batch = music_batch_fn(music)
 
     if include_info:
       # Gather metadata and trial info for tracing/debugging
@@ -120,12 +124,33 @@ def mel_create_collate_fn(
         ],
       }
       # Return dict with eeg, mel, and info
-      return {"eeg": eeg_batch, "mel": music_batch, "info": info_dict}
+      return {"eeg": eeg_batch, "music": music_batch, "info": info_dict}
     else:
       # Return dict with just eeg and mel
-      return {"eeg": eeg_batch, "mel": music_batch}
+      return {"eeg": eeg_batch, "music": music_batch}
 
   return collate_fn
+
+
+def mel_create_collate_fn(
+  include_info: bool = False,
+) -> Callable[
+  [List[TrialData[EegData, MelRaw]]], Dict[str, torch.Tensor | Dict[str, Any]]
+]:
+  """
+  Create a collate function that gathers trial data into batches.
+
+  Args:
+      include_info: If True, also return a dictionary with metadata and trial info
+  Returns:
+      Collate function that converts list of TrialData[EegData, MelRaw] into batched tensors
+  """
+
+  def mel_batch_fn(music_list):
+    music = [torch.tensor(getattr(x, "mel"), dtype=torch.float32) for x in music_list]
+    return torch.stack(music)
+
+  return create_collate_fn(mel_batch_fn, include_info)
 
 
 def create_dataloader(
@@ -135,7 +160,7 @@ def create_dataloader(
   pin_memory=True,
   is_training=True,
   prefetch_factor=2,
-  include_info=False,
+  collate_fn=None,
 ):
   """
   Create an optimized DataLoader using parameters from training notes.
@@ -147,11 +172,13 @@ def create_dataloader(
       pin_memory: Whether to use pinned memory (recommended: True)
       is_training: If True, shuffle=True and drop_last=True; if False, shuffle=False and drop_last=False
       prefetch_factor: Prefetch factor (default: 2, from training notes)
-      include_info: If True, collate function will also return metadata dict
-
+      collate_fn: default mel_create_collate_fn with include_info=False
   Returns:
       DataLoader configured for training or validation with custom collate function
   """
+
+  if collate_fn is None:
+    collate_fn = mel_create_collate_fn(include_info=False)
 
   # Configure DataLoader with optimal parameters from training.md notes
   dataloader = DataLoader(
@@ -163,7 +190,7 @@ def create_dataloader(
     pin_memory=pin_memory,
     persistent_workers=num_workers > 0,  # Only with multiprocessing
     prefetch_factor=prefetch_factor if num_workers > 0 else None,
-    collate_fn=mel_create_collate_fn(include_info=include_info),
+    collate_fn=collate_fn,
   )
 
   return dataloader
