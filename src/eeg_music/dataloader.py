@@ -6,6 +6,7 @@ from .data import (
   EEGMusicDataset,
   MappedDataset,
   MelRaw,
+  MusicData,
   NoteOnsets,
   RepeatedDataset,
   StratifiedSamplingDataset,
@@ -82,7 +83,7 @@ def create_collate_fn(
   music_batch_fn: Callable[[Sequence[MelRaw | WavRAW | NoteOnsets]], Any],
   include_info: bool = False,
 ) -> Callable[
-  [List[TrialData[EegData, MelRaw]]], Dict[str, torch.Tensor | Dict[str, Any]]
+  [List[TrialData[EegData, MusicData]]], Dict[str, torch.Tensor | Dict[str, Any]]
 ]:
   """
   Create a collate function that gathers trial data into batches.
@@ -94,7 +95,7 @@ def create_collate_fn(
   """
 
   def collate_fn(
-    trials: List[TrialData[EegData, MelRaw]],
+    trials: List[TrialData[EegData, MusicData]],
   ) -> Dict[str, torch.Tensor | Dict[str, Any]]:
     # Extract EEG and music data as torch tensors
     eegs = [
@@ -150,7 +151,7 @@ def mel_create_collate_fn(
     music = [torch.tensor(getattr(x, "mel"), dtype=torch.float32) for x in music_list]
     return torch.stack(music)
 
-  return create_collate_fn(mel_batch_fn, include_info)
+  return create_collate_fn(mel_batch_fn, include_info)  # type: ignore[return-value]
 
 
 def create_dataloader(

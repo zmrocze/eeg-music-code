@@ -320,19 +320,18 @@ class EegptConfig:
   # prefetch_factor: int = 2
 
 
-def mk_optimizer_and_lr_scheduler(trainable_params, config: EegptConfig):
+def mk_optimizer_and_lr_scheduler(trainable_params, lr_config: float | LRCosine):
   """
   Create optimizer and learning rate scheduler.
 
   Args:
     trainable_params: Iterator of parameters to optimize
-    config: EegptConfig with lr_config settings
+    lr_config: Learning rate config - either a float or LRCosine scheduler config
   """
-  if isinstance(config.lr_config, float):
-    optimizer = torch.optim.AdamW(trainable_params, lr=config.lr_config)
+  if isinstance(lr_config, float):
+    optimizer = torch.optim.AdamW(trainable_params, lr=lr_config)
     return optimizer, None
-  elif isinstance(config.lr_config, LRCosine):
-    lr_config = config.lr_config
+  elif isinstance(lr_config, LRCosine):
     optimizer = torch.optim.AdamW(trainable_params, lr=lr_config.max_lr)
     lr_scheduler = CosineAnnealingWarmRestarts(
       optimizer,
@@ -343,7 +342,7 @@ def mk_optimizer_and_lr_scheduler(trainable_params, config: EegptConfig):
     )
     return optimizer, lr_scheduler
   else:
-    raise ValueError(f"Unknown lr_config type: {type(config.lr_config)}")
+    raise ValueError(f"Unknown lr_config type: {type(lr_config)}")
 
 
 class EegptLightning(LightningModule):
@@ -500,7 +499,7 @@ class EegptLightning(LightningModule):
   def configure_optimizers(self):
     trainable_params = self._get_trainable_parameters()
     optimizer, lr_scheduler = mk_optimizer_and_lr_scheduler(
-      trainable_params, self.config
+      trainable_params, self.config.lr_config
     )
     if lr_scheduler is None:
       return optimizer

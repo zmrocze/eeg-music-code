@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from lightning import Callback, Trainer
-from eeg_music.dataloader import load_and_create_dataloaders
+from eeg_music.dataloader import create_collate_fn, load_and_create_dataloaders
 import torch
 from skimage.metrics import structural_similarity
 from sklearn.metrics.pairwise import cosine_similarity
@@ -419,14 +419,14 @@ class MainTraining:
     self.wandb_logger: WandbLogger
     self.callbacks: list[Callback]
     self.trainer: Trainer
-
-  def create_dataloaders(self):
-    self.dataloaders = load_and_create_dataloaders(self.config.data_path, self.config)
     assert (
       isinstance(self.config.lr_config, float)
       if self.config.use_learning_rate_finder
       else True
     )
+
+  def create_dataloaders(self):
+    self.dataloaders = load_and_create_dataloaders(self.config.data_path, self.config)
 
   def create_model(self):
     eegpt_config = EegptConfig(
@@ -558,6 +558,53 @@ class EmotionClassifierTraining(MainTraining):
     else:
       self.model = EegptEmotionClassifier(eegpt_config, num_classes=9)
     # freeze_all_except_head_and_adapters(self.model, verbose=True)
+
+  def create_callbacks(self):
+    """Create callbacks without AUROC and spectrogram logging (not applicable for classification)."""
+    save_on_exc = OnExceptionCheckpoint(
+      f"{self.config.save_path}/exc_save",
+    )
+
+    ckpt_callback = ModelCheckpoint(
+      every_n_epochs=self.config.save_model_per_epochs,
+      dirpath=self.config.save_path,
+      save_top_k=2,
+      monitor="val_loss",
+      mode="min",
+      save_last=True,
+    )
+
+    optional_lr_finder = (
+      [LearningRateFinder(min_lr=1e-08, max_lr=1, num_training_steps=100)]
+      if self.config.use_learning_rate_finder
+      else []
+    )
+
+    self.callbacks = [
+      ckpt_callback,
+      RichProgressBar(),
+      save_on_exc,
+      LearningRateMonitor(logging_interval="step"),
+    ] + optional_lr_finder
+
+
+class NoteOnsetsTraining(MainTraining):
+  """Training class for note onsets detection using EegptEmotionClassifier."""
+
+  def __init__(self, config):
+    super().__init__(config)
+
+  def create_dataloaders(self):
+    self.dataloaders = load_and_create_dataloaders(
+      self.config.data_path,
+      self.config,
+      collate_fn=create_collate_fn(
+        include_info=self.config.include_info, music_batch_fn=lambda x: x
+      ),
+    )
+
+  def create_model(self):
+    pass
 
   def create_callbacks(self):
     """Create callbacks without AUROC and spectrogram logging (not applicable for classification)."""
