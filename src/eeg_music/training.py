@@ -1,6 +1,7 @@
+from fractions import Fraction
 from pathlib import Path
 
-from lightning import Callback, Trainer
+from lightning import Callback, LightningModule, Trainer
 from eeg_music.dataloader import create_collate_fn, load_and_create_dataloaders
 import torch
 from skimage.metrics import structural_similarity
@@ -31,6 +32,7 @@ from eeg_music.eegpt import (
   EEG_WIDTH,
   USING_CHANNELS,
 )
+from eeg_music.eegnet import EEGNetConfig, EEGNetLightning
 from eeg_music.freeze_utils import freeze_all_except_head_and_adapters
 
 
@@ -91,6 +93,61 @@ class TrainingConfig:
 
 
 config = TrainingConfig()
+
+
+@dataclass
+class NoteOnsetsTrainingConfig:
+  """Configuration for note onsets detection training."""
+
+  # Model config
+  model_config: EEGNetConfig = field(
+    default_factory=lambda: EEGNetConfig(
+      model_type="eegnet",
+      chunk_width=128,  # 256Hz * 1/2s
+      num_channels=len(USING_CHANNELS),  # 28 channels
+      eeg_sample_rate=256,
+      window_start=32,
+      window_end=32 + 64,
+      lr_config=1e-4,
+      pos_weight=None,  # Can be tuned for class imbalance
+    )
+  )
+
+  # Checkpoint path (if available, otherwise train from scratch)
+  checkpoint_path: Optional[Path] = None
+
+  # Data settings
+  data_path: Path = Path("./datasets/bcmi_preprocessed/bcmi_combined_noteonsets_28ch")
+  data_loader_num_workers: int = 4
+  prefetch_factor: int = 2
+  batch_size: int = 32
+
+  # Training settings
+  num_epochs: int = 100
+  save_model_per_epochs: int = 5
+  val_every_n_epoch: int = 1
+
+  # Dataset split settings
+  ds_p_train: float = 0.85
+  ds_p_val: float = 0.0
+  ds_split_seed: int = 42
+  ds_use_test_for_val: bool = True
+  ds_test_repeated_mul: int = 10
+  ds_chunk_width: Fraction = Fraction(1, 2)
+
+  # Wandb logging
+  wandb_log_model: Union[Literal["all"], bool] = "all"
+  project_name: str = "neural-noteonsets-decoding"
+  run_name: str = "eegnet-onset-detection"
+  run_extra_name: str = "0"
+  randint: int = random.randint(0, 1000)
+  save_path: str = f"{run_name}-ckpt"
+
+  # Learning rate finder
+  use_learning_rate_finder: bool = False
+
+  # Dataloader settings
+  include_info: bool = False
 
 
 def count_n_params(model):
@@ -415,7 +472,7 @@ class MainTraining:
   def __init__(self, config):
     self.config = config
     self.dataloaders: dict
-    self.model: EegptLightning
+    self.model: LightningModule
     self.wandb_logger: WandbLogger
     self.callbacks: list[Callback]
     self.trainer: Trainer
@@ -505,7 +562,7 @@ class MainTraining:
   def trainer_fit(self):
     print(f"Model trainable params: {count_n_params(self.model)}")
     print(
-      "Note that val and test dataloaders augmentation/randomness in the form of choosing the 4s fragment."
+      "Note that val and test dataloaders augmentation/randomness in the form of choosing the i.e. 4s fragment."
     )
 
     log_hyperparameters(self.model, self.dataloaders, self.config, self.wandb_logger)
@@ -589,7 +646,7 @@ class EmotionClassifierTraining(MainTraining):
 
 
 class NoteOnsetsTraining(MainTraining):
-  """Training class for note onsets detection using EegptEmotionClassifier."""
+  """Training class for note onsets detection using EEGNet."""
 
   def __init__(self, config):
     super().__init__(config)
@@ -604,20 +661,43 @@ class NoteOnsetsTraining(MainTraining):
     )
 
   def create_model(self):
-    pass
+    """Create EEGNet model, loading from checkpoint if available."""
+    if self.config.checkpoint_path is not None and self.config.checkpoint_path.exists():
+      # Load from checkpoint
+      print(f"Loading model from checkpoint: {self.config.checkpoint_path}")
+      self.model = EEGNetLightning.load_from_checkpoint(
+        self.config.checkpoint_path,
+        config=self.config.model_config,
+      )
+    else:
+      # Create fresh model
+      if self.config.checkpoint_path is not None:
+        print(f"Checkpoint path specified but not found: {self.config.checkpoint_path}")
+      print("Creating fresh EEGNet model")
+      self.model = EEGNetLightning(self.config.model_config)
 
   def create_callbacks(self):
-    """Create callbacks without AUROC and spectrogram logging (not applicable for classification)."""
+    """Create callbacks for binary onset detection training."""
     save_on_exc = OnExceptionCheckpoint(
       f"{self.config.save_path}/exc_save",
     )
 
-    ckpt_callback = ModelCheckpoint(
+    ckpt_callback_f1 = ModelCheckpoint(
       every_n_epochs=self.config.save_model_per_epochs,
       dirpath=self.config.save_path,
-      save_top_k=2,
+      save_top_k=1,
+      monitor="val_f1_score",
+      mode="max",
+      filename="best-f1-{epoch:02d}-{val_f1_score:.3f}",
+    )
+
+    ckpt_callback_loss = ModelCheckpoint(
+      every_n_epochs=self.config.save_model_per_epochs,
+      dirpath=self.config.save_path,
+      save_top_k=1,
       monitor="val_loss",
       mode="min",
+      filename="best-loss-{epoch:02d}-{val_loss:.3f}",
       save_last=True,
     )
 
@@ -628,14 +708,15 @@ class NoteOnsetsTraining(MainTraining):
     )
 
     self.callbacks = [
-      ckpt_callback,
+      ckpt_callback_f1,
+      ckpt_callback_loss,
       RichProgressBar(),
       save_on_exc,
       LearningRateMonitor(logging_interval="step"),
     ] + optional_lr_finder
 
 
-def main(config=config) -> Tuple[EegptLightning, Trainer, dict]:
+def main(config=config) -> Tuple[LightningModule, Trainer, dict]:
   training = MainTraining(config)
   return training.run()
 

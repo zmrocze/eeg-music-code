@@ -19,11 +19,11 @@ from .emotion_utils import parse_music_emotion
 from pathlib import Path
 
 
-def after_loaded_ds(ds):
+def after_loaded_ds(ds, trial_length_secs=Fraction(4, 1)):
   stratified = StratifiedSamplingDataset(
     ds,
     n_strata=10,
-    trial_length_secs=Fraction(4, 1),
+    trial_length_secs=trial_length_secs,
   )
 
   dereferenced = MappedDataset(stratified, rereference_trial)
@@ -39,9 +39,13 @@ def load_and_create_dataloaders(
   train_ds, val_ds, test_ds = ds.subject_wise_split(
     p_train=config.ds_p_train, p_val=config.ds_p_val, seed=config.ds_split_seed
   )
-  dereferenced = after_loaded_ds(train_ds)
-  dereferenced_val = after_loaded_ds(val_ds)
-  dereferenced_tst = after_loaded_ds(test_ds)
+
+  # Get chunk width from config (default to 4 seconds if not specified)
+  trial_length_secs = getattr(config, "ds_chunk_width", Fraction(4, 1))
+
+  dereferenced = after_loaded_ds(train_ds, trial_length_secs=trial_length_secs)
+  dereferenced_val = after_loaded_ds(val_ds, trial_length_secs=trial_length_secs)
+  dereferenced_tst = after_loaded_ds(test_ds, trial_length_secs=trial_length_secs)
   if config.ds_use_test_for_val:  # for when p_val=0
     dereferenced_val = dereferenced_tst
   if config.ds_test_repeated_mul > 1:
