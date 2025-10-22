@@ -32,7 +32,7 @@ from eeg_music.eegpt import (
   EEG_WIDTH,
   USING_CHANNELS,
 )
-from eeg_music.eegnet import EEGNetConfig, EEGNetLightning
+from eeg_music.eegnet import NoteOnsetModelConfig, EEGNetConfig, EEGNetLightning
 from eeg_music.freeze_utils import freeze_all_except_head_and_adapters
 
 
@@ -100,9 +100,9 @@ class NoteOnsetsTrainingConfig:
   """Configuration for note onsets detection training."""
 
   # Model config
-  model_config: EEGNetConfig = field(
-    default_factory=lambda: EEGNetConfig(
-      model_type="eegnet",
+  model_config: NoteOnsetModelConfig = field(
+    default_factory=lambda: NoteOnsetModelConfig(
+      model_config=EEGNetConfig(),
       chunk_width=128,  # 256Hz * 1/2s
       num_channels=len(USING_CHANNELS),  # 28 channels
       eeg_sample_rate=256,
