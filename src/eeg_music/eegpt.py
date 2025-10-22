@@ -473,27 +473,50 @@ class EegptLightning(LightningModule):
   def training_step(self, batch, batch_idx):
     x = batch["eeg"]
     y = batch["music"]
+    batch_size = x.shape[0]
     y_hat = self(x)
     loss = self.loss_fn(y_hat, y)
     self.log(
-      "train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True
+      "train_loss",
+      loss,
+      on_step=True,
+      on_epoch=True,
+      prog_bar=True,
+      logger=True,
+      batch_size=batch_size,
     )
     return loss
 
   def validation_step(self, batch, batch_idx):
     x = batch["eeg"]
     y = batch["music"]
+    batch_size = x.shape[0]
     y_hat = self(x)
     loss = self.loss_fn(y_hat, y)
-    self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+    self.log(
+      "val_loss",
+      loss,
+      on_step=False,
+      on_epoch=True,
+      prog_bar=True,
+      logger=True,
+      batch_size=batch_size,
+    )
 
   def test_step(self, batch, batch_idx):
     x = batch["eeg"]
     y = batch["music"]
+    batch_size = x.shape[0]
     y_hat = self(x)
     loss = self.loss_fn(y_hat, y)
     self.log(
-      "test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True
+      "test_loss",
+      loss,
+      on_step=False,
+      on_epoch=True,
+      prog_bar=True,
+      logger=True,
+      batch_size=batch_size,
     )
 
   def configure_optimizers(self):
@@ -548,8 +571,15 @@ class EegptEmotionClassifier(EegptLightning):
     # Update accuracy
     self.train_accuracy.update(y_hat, y)
 
+    batch_size = x.shape[0]
     self.log(
-      "train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True
+      "train_loss",
+      loss,
+      on_step=True,
+      on_epoch=True,
+      prog_bar=True,
+      logger=True,
+      batch_size=batch_size,
     )
     return loss
 
@@ -568,7 +598,16 @@ class EegptEmotionClassifier(EegptLightning):
     # Update accuracy
     self.val_accuracy.update(y_hat, y)
 
-    self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+    batch_size = x.shape[0]
+    self.log(
+      "val_loss",
+      loss,
+      on_step=False,
+      on_epoch=True,
+      prog_bar=True,
+      logger=True,
+      batch_size=batch_size,
+    )
 
   def test_step(self, batch, batch_idx):
     x = batch["eeg"]
@@ -585,8 +624,15 @@ class EegptEmotionClassifier(EegptLightning):
     # Update accuracy
     self.test_accuracy.update(y_hat, y)
 
+    batch_size = x.shape[0]
     self.log(
-      "test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True
+      "test_loss",
+      loss,
+      on_step=False,
+      on_epoch=True,
+      prog_bar=True,
+      logger=True,
+      batch_size=batch_size,
     )
 
   def on_train_epoch_end(self):

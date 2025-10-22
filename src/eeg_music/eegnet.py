@@ -337,6 +337,7 @@ class EEGNetLightning(LightningModule):
       on_epoch=True,
       prog_bar=True,
       logger=True,
+      batch_size=batch_size,
     )
 
     return loss
