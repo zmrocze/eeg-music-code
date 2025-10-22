@@ -655,29 +655,42 @@ class NoteOnsetsTraining(MainTraining):
     super().__init__(config)
 
   def create_dataloaders(self):
+    # Enable include_info when using subject-specific preprocessing (need dataset+subject)
+    include_info = (
+      self.config.include_info or self.config.model_config.use_subject_specific
+    )
     self.dataloaders = load_and_create_dataloaders(
       self.config.data_path,
       self.config,
       collate_fn=create_collate_fn(
-        include_info=self.config.include_info, music_batch_fn=lambda x: x
+        include_info=include_info, music_batch_fn=lambda x: x
       ),
+      include_mapper=self.config.model_config.use_subject_specific,
     )
 
   def create_model(self):
     """Create EEGNet model, loading from checkpoint if available."""
+    # Get mapper from dataloaders if subject-specific preprocessing is enabled
+    mapper = (
+      self.dataloaders.get("mapper")
+      if self.config.model_config.use_subject_specific
+      else None
+    )
+
     if self.config.checkpoint_path is not None and self.config.checkpoint_path.exists():
       # Load from checkpoint
       print(f"Loading model from checkpoint: {self.config.checkpoint_path}")
       self.model = EEGNetLightning.load_from_checkpoint(
         self.config.checkpoint_path,
         config=self.config.model_config,
+        subject_mapper=mapper,
       )
     else:
       # Create fresh model
       if self.config.checkpoint_path is not None:
         print(f"Checkpoint path specified but not found: {self.config.checkpoint_path}")
       print("Creating fresh EEGNet model")
-      self.model = EEGNetLightning(self.config.model_config)
+      self.model = EEGNetLightning(self.config.model_config, subject_mapper=mapper)
 
   def log_hyperparameters(self):
     """Log EEGNet-specific hyperparameters to wandb."""

@@ -7,6 +7,7 @@ from torcheeg.models import EEGNet as TorchEEGNet, FBCNet, TSCeption, ATCNet
 
 from eeg_music.eegpt import mk_optimizer_and_lr_scheduler, LRCosine
 from .data import NoteOnsets
+from .subject_specific import SubjectSpecificLinear, SubjectDatasetMapper
 
 
 class BinaryAccuracyCalc:
@@ -104,6 +105,8 @@ class EEGNetWrapper(nn.Module):
       chunk_width: Total width of the input chunk in samples
       num_channels: Number of EEG channels (electrodes)
       model_config: Model-specific configuration (determines which model to use)
+      subject_specific_mapper: Optional mapper for subject-specific preprocessing
+      subject_specific_trainable: Whether subject-specific weights are trainable
       **model_kwargs: Additional keyword arguments to override config values
   """
 
@@ -115,6 +118,8 @@ class EEGNetWrapper(nn.Module):
     model_config: Optional[
       "EEGNetConfig | FBCNetConfig | TSCeptionConfig | ATCNetConfig"
     ] = None,
+    subject_specific_mapper: Optional[SubjectDatasetMapper] = None,
+    subject_specific_trainable: bool = False,
     **model_kwargs,
   ):
     super().__init__()
@@ -124,6 +129,17 @@ class EEGNetWrapper(nn.Module):
     self.eeg_sample_rate = eeg_sample_rate
     self.model_config = model_config or EEGNetConfig()  # Default to EEGNet
     self.num_classes = 1  # Binary classification: single output
+
+    # Optional subject-specific preprocessing
+    self.subject_specific_mapper = subject_specific_mapper
+    if subject_specific_mapper is not None:
+      self.subject_specific = SubjectSpecificLinear(
+        num_subjects=subject_specific_mapper.num_subjects,
+        num_channels=num_channels,
+        trainable_weights=subject_specific_trainable,
+      )
+    else:
+      self.subject_specific = None
 
     # Initialize the chosen model
     self.model = self._create_model(**model_kwargs)
@@ -186,19 +202,28 @@ class EEGNetWrapper(nn.Module):
           **model_kwargs,
         )
 
-      case _:
-        raise ValueError(f"Unknown model config type: {type(self.model_config)}")
-
-  def forward(self, x: torch.Tensor) -> torch.Tensor:
+  def forward(
+    self, x: torch.Tensor, subject_ids: Optional[torch.Tensor] = None
+  ) -> torch.Tensor:
     """Forward pass through the model.
 
     Args:
         x: Input EEG tensor of shape (batch, channels, timepoints)
+        subject_ids: Optional subject IDs for subject-specific preprocessing
+                     (batch,) integer indices or (batch, num_subjects) one-hot
 
     Returns:
         Output tensor of shape (batch,) with 1 logit per sample
         for binary classification (apply sigmoid for probability)
     """
+    # Apply subject-specific preprocessing if enabled
+    if self.subject_specific is not None:
+      if subject_ids is None:
+        raise ValueError(
+          "subject_ids required when subject_specific preprocessing is enabled"
+        )
+      x = self.subject_specific(x, subject_ids)
+
     # Reshape input - add channel dimension for all models (they all expect 4D input)
     # Input: [batch, num_electrodes, chunk_size]
     # Output: [batch, 1, num_electrodes, chunk_size]
@@ -278,6 +303,8 @@ class NoteOnsetModelConfig:
       window_end: End sample index of target window (constant for all samples)
       lr_config: Learning rate config - either a float or LRCosine scheduler config
       pos_weight: Positive class weight for BCEWithLogitsLoss (to handle class imbalance)
+      use_subject_specific: Enable subject-specific linear preprocessing
+      subject_specific_trainable: Whether subject-specific weights are trainable
   """
 
   model_config: EEGNetConfig | FBCNetConfig | TSCeptionConfig | ATCNetConfig = field(
@@ -290,6 +317,8 @@ class NoteOnsetModelConfig:
   window_end: int = 256
   lr_config: float | LRCosine = 1e-4
   pos_weight: Optional[float] = None
+  use_subject_specific: bool = False
+  subject_specific_trainable: bool = False
 
 
 def has_onset_in_window(
@@ -330,13 +359,19 @@ class EEGNetLightning(LightningModule):
   and testing with binary cross-entropy loss.
   """
 
-  def __init__(self, config: NoteOnsetModelConfig, **model_kwargs):
+  def __init__(
+    self,
+    config: NoteOnsetModelConfig,
+    subject_mapper: Optional[SubjectDatasetMapper] = None,
+    **model_kwargs,
+  ):
     super().__init__()
     self.config = config
+    self.subject_mapper = subject_mapper
     if isinstance(self.config.lr_config, float):
       # to access by LearningRateFinder
       self.learning_rate = self.config.lr_config
-    self.save_hyperparameters()
+    self.save_hyperparameters(ignore=["subject_mapper"])
 
     # Create the model - EEGNetWrapper infers model type from config
     self.model = EEGNetWrapper(
@@ -344,6 +379,8 @@ class EEGNetLightning(LightningModule):
       num_channels=config.num_channels,
       eeg_sample_rate=config.eeg_sample_rate,
       model_config=config.model_config,
+      subject_specific_mapper=subject_mapper if config.use_subject_specific else None,
+      subject_specific_trainable=config.subject_specific_trainable,
       **model_kwargs,
     )
 
@@ -364,9 +401,11 @@ class EEGNetLightning(LightningModule):
     self.val_metrics = BinaryAccuracyCalc()
     self.test_metrics = BinaryAccuracyCalc()
 
-  def forward(self, x: torch.Tensor) -> torch.Tensor:
+  def forward(
+    self, x: torch.Tensor, subject_ids: Optional[torch.Tensor] = None
+  ) -> torch.Tensor:
     """Forward pass through the model."""
-    return self.model(x)
+    return self.model(x, subject_ids)
 
   def _compute_loss(self, batch, batch_idx, stage: str):
     """Compute loss for a batch.
@@ -375,6 +414,7 @@ class EEGNetLightning(LightningModule):
         batch: Dictionary with keys:
             - 'eeg': (batch, channels, timepoints)
             - 'music': List of NoteOnsets objects
+            - 'info': Optional dict with dataset and subject info
         batch_idx: Batch index
         stage: 'train', 'val', or 'test'
 
@@ -385,8 +425,26 @@ class EEGNetLightning(LightningModule):
     note_onsets_list = batch["music"]  # List of NoteOnsets objects
     batch_size = x.shape[0]
 
+    # Get subject IDs if subject-specific preprocessing is enabled
+    subject_ids = None
+    if self.config.use_subject_specific and self.subject_mapper is not None:
+      if "info" not in batch:
+        raise ValueError(
+          "Subject-specific preprocessing requires batch['info'] with dataset and subject"
+        )
+      info = batch["info"]
+      # Create subject_ids tensor from dataset and subject lists
+      subject_ids = torch.tensor(
+        [
+          self.subject_mapper.get_id(info["dataset"][i], info["subject"][i])
+          for i in range(batch_size)
+        ],
+        dtype=torch.long,
+        device=x.device,
+      )
+
     # Forward pass
-    y_hat = self(x)  # (batch,) - single logit per sample
+    y_hat = self(x, subject_ids)  # (batch,) - single logit per sample
 
     # Check if onsets fall within the specified window for each sample
     y = torch.tensor(

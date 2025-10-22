@@ -2,6 +2,7 @@ from fractions import Fraction
 import torch
 from torch.utils.data import DataLoader
 from typing import List, Dict, Callable, Any, Sequence
+from .subject_specific import SubjectDatasetMapper
 from .data import (
   EEGMusicDataset,
   MappedDataset,
@@ -32,13 +33,19 @@ def after_loaded_ds(ds, trial_length_secs=Fraction(4, 1)):
 
 
 def load_and_create_dataloaders(
-  ds_path: Path, config, collate_fn=None
-) -> Dict[str, DataLoader]:
+  ds_path: Path, config, collate_fn=None, include_mapper: bool = False
+) -> Dict[str, Any]:
   # Path("./datasets/bcmi_combined_prepared_mel_28ch")
   ds = EEGMusicDataset.load_ondisk(ds_path)
   train_ds, val_ds, test_ds = ds.subject_wise_split(
     p_train=config.ds_p_train, p_val=config.ds_p_val, seed=config.ds_split_seed
   )
+
+  mapper = None
+  if include_mapper:
+    mapper = SubjectDatasetMapper()
+    for _, row in ds.df[["dataset", "subject"]].drop_duplicates().iterrows():
+      mapper.add_subject(str(row["dataset"]), str(row["subject"]))
 
   # Get chunk width from config (default to 4 seconds if not specified)
   trial_length_secs = getattr(config, "ds_chunk_width", Fraction(4, 1))
@@ -80,7 +87,10 @@ def load_and_create_dataloaders(
     collate_fn=collate_fn,
   )
 
-  return {"train": train_dl, "val": val_dl, "test": test_dl}
+  result: Dict[str, Any] = {"train": train_dl, "val": val_dl, "test": test_dl}
+  if include_mapper and mapper is not None:
+    result["mapper"] = mapper
+  return result
 
 
 def create_collate_fn(
