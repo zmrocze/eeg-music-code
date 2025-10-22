@@ -559,13 +559,15 @@ class MainTraining:
       # precision="32-true",
     )
 
+  def log_hyperparameters(self):
+    """Log hyperparameters to wandb. Can be overridden by subclasses."""
+    log_hyperparameters(self.model, self.dataloaders, self.config, self.wandb_logger)
+
   def trainer_fit(self):
     print(f"Model trainable params: {count_n_params(self.model)}")
     print(
       "Note that val and test dataloaders augmentation/randomness in the form of choosing the i.e. 4s fragment."
     )
-
-    log_hyperparameters(self.model, self.dataloaders, self.config, self.wandb_logger)
 
     self.trainer.fit(
       self.model,
@@ -587,6 +589,7 @@ class MainTraining:
     self.initialize_logger()
     self.create_callbacks()
     self.create_trainer()
+    self.log_hyperparameters()
     self.trainer_fit()
     self.trainer_test()
     return self.model, self.trainer, self.dataloaders
@@ -675,6 +678,30 @@ class NoteOnsetsTraining(MainTraining):
         print(f"Checkpoint path specified but not found: {self.config.checkpoint_path}")
       print("Creating fresh EEGNet model")
       self.model = EEGNetLightning(self.config.model_config)
+
+  def log_hyperparameters(self):
+    """Log EEGNet-specific hyperparameters to wandb."""
+    params_to_log = {
+      # Model structure
+      "trainable_params_total": count_n_params(self.model),
+      "model_type": self.config.model_config.model_type,
+      "chunk_width": self.config.model_config.chunk_width,
+      "num_channels": self.config.model_config.num_channels,
+      "num_bands": self.config.model_config.num_bands,
+      # Data processing
+      "eeg_sample_rate": self.config.model_config.eeg_sample_rate,
+      "window_start": self.config.model_config.window_start,
+      "window_end": self.config.model_config.window_end,
+      # Training
+      "pos_weight": self.config.model_config.pos_weight,
+      # Dataloader params
+      "dataloader_train_size": len(self.dataloaders["train"]),
+      "dataloader_val_size": len(self.dataloaders["val"]),
+      "dataloader_test_size": len(self.dataloaders["test"]),
+      "batch_size": self.config.batch_size,
+      "num_workers": self.config.data_loader_num_workers,
+    }
+    self.wandb_logger.log_hyperparams(params_to_log)
 
   def create_callbacks(self):
     """Create callbacks for binary onset detection training."""
