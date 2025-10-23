@@ -768,20 +768,33 @@ class EEGMusicDataset(torchdata.Dataset):
     if p_train + p_val >= 1:
       raise ValueError("p_train + p_val < 1 required")
     np.random.seed(seed)
-    subj = np.array(self.df["subject"].unique())
-    np.random.shuffle(subj)
-    n = len(subj)
+    # Get unique (dataset, subject) pairs - reset_index to avoid ambiguity
+    subj_pairs = (
+      self.df.reset_index(drop=True)[["dataset", "subject"]]
+      .drop_duplicates()
+      .to_numpy()
+    )
+    np.random.shuffle(subj_pairs)
+    n = len(subj_pairs)
     n_tr = int(n * p_train)
     n_va = int(n * p_val)
 
-    def mk(s: np.ndarray) -> "EEGMusicDataset":
+    def mk(pairs: NDArray[np.str_]) -> "EEGMusicDataset":
       ds = EEGMusicDataset()
-      df = self.df[self.df["subject"].isin(s.tolist())]
-      ds.df = cast(DataFrame, df.reset_index(drop=True))
+      # Create DataFrame from pairs and merge to filter
+      pairs_df = pd.DataFrame(pairs, columns=Index(["dataset", "subject"]))
+      df = self.df.reset_index(drop=True).merge(
+        pairs_df, on=["dataset", "subject"], how="inner"
+      )
+      ds.df = cast(DataFrame, df)
       ds.music_collection = self.music_collection
       return ds
 
-    return mk(subj[:n_tr]), mk(subj[n_tr : n_tr + n_va]), mk(subj[n_tr + n_va :])
+    return (
+      mk(subj_pairs[:n_tr]),
+      mk(subj_pairs[n_tr : n_tr + n_va]),
+      mk(subj_pairs[n_tr + n_va :]),
+    )
 
   def save(self, base_dir: Path) -> None:
     """

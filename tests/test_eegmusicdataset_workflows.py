@@ -305,12 +305,25 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
     def action(ds):
       tr, va, te = ds.subject_wise_split(0.5, 0.0, seed=123)
       self.assertEqual(len(tr) + len(va) + len(te), len(ds))
-      # Use only train & test (va empty expected) for previous assertions
-      tr_subj = set(tr.df["subject"].unique())
-      te_subj = set(te.df["subject"].unique())
-      self.assertTrue(tr_subj.isdisjoint(te_subj))
 
-    self._copy_and_load_combined_dataset(action)
+      def pairs(dataset: EEGMusicDataset) -> set[tuple[str, str]]:
+        cols = dataset.df.reset_index(drop=True)[["dataset", "subject"]]
+        return {
+          (cast(str, row.dataset), cast(str, row.subject))  # type: ignore[reportAttributeAccessIssue]
+          for row in cols.drop_duplicates().itertuples(index=False)
+        }
+
+      tr_pairs = pairs(tr)
+      va_pairs = pairs(va)
+      te_pairs = pairs(te)
+      all_pairs = pairs(ds)
+
+      self.assertTrue(tr_pairs.isdisjoint(va_pairs))
+      self.assertTrue(tr_pairs.isdisjoint(te_pairs))
+      self.assertTrue(va_pairs.isdisjoint(te_pairs))
+      self.assertSetEqual(tr_pairs | va_pairs | te_pairs, all_pairs)
+
+    self._copy_and_load_combined_dataset(action, min_subjects=8)
 
   # 7. load -> save -> reload -> compare basic invariants
   def test_save_roundtrip(self):
