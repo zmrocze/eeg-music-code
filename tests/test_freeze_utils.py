@@ -27,6 +27,7 @@ def test_freeze_function():
     chpt_path=chpt_path,
     lr_config=1e-4,
     trainable=["linear", "head"],
+    requiring_grad=["linear", "head"],
     use_chan_conv=False,
   )
   model = EegptLightning(config)

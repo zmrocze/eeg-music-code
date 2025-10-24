@@ -796,6 +796,139 @@ class EEGMusicDataset(torchdata.Dataset):
       mk(subj_pairs[n_tr + n_va :]),
     )
 
+  def trial_wise_split(
+    self, p_train: float, p_val: float, p_test: float, seed: int = 42
+  ) -> Dict[str, Union["EEGMusicDataset", int]]:
+    """Split trials within each subject into train/val/test partitions.
+
+    Unlike subject_wise_split, this keeps all subjects in all partitions,
+    but splits their trials according to the given proportions.
+
+    Args:
+      p_train: fraction of trials for train (must be > 0)
+      p_val: fraction of trials for val (must be >= 0)
+      p_test: fraction of trials for test (must be >= 0)
+      seed: random seed for reproducibility
+
+    Returns:
+      Dict with keys:
+        - "train": EEGMusicDataset with train trials (if p_train > 0)
+        - "val": EEGMusicDataset with val trials (if p_val > 0)
+        - "test": EEGMusicDataset with test trials (if p_test > 0)
+        - "num_skipped_trials": number of trials skipped (if any subjects were excluded)
+
+    Requirements:
+      1. Partitions are disjoint
+      2. Each partition contains roughly the requested fraction of trials
+      3. Split is random (deterministic via seed)
+      4. Every non-empty partition contains at least one trial from every
+         (dataset, subject) pair that appears in at least one other partition
+      5. If a subject has too few trials to give at least one to each
+         non-zero partition, that subject is excluded entirely
+      6. Returns num_skipped_trials if any subjects were excluded
+    """
+    # Validate proportions
+    partitions = [("train", p_train), ("val", p_val), ("test", p_test)]
+    active_partitions = [(name, p) for name, p in partitions if p > 0]
+
+    if not active_partitions:
+      raise ValueError("At least one partition must have p > 0")
+
+    total_p = sum(p for _, p in active_partitions)
+    if not np.isclose(total_p, 1.0):
+      raise ValueError(f"Proportions must sum to 1.0, got {total_p}")
+
+    for name, p in active_partitions:
+      if p <= 0:
+        raise ValueError(f"{name} proportion must be > 0 if included, got {p}")
+
+    min_trials_needed = len(active_partitions)
+
+    np.random.seed(seed)
+
+    # Group trials by (dataset, subject)
+    df = self.df.reset_index(drop=True)
+    grouped = df.groupby(["dataset", "subject"], sort=False)
+
+    # Collect trial indices for each partition
+    partition_indices: Dict[str, List[int]] = {
+      name: [] for name, _ in active_partitions
+    }
+    num_skipped_trials = 0
+
+    for _, group in grouped:
+      indices = group.index.tolist()
+      n_trials = len(indices)
+
+      # Skip subjects with too few trials
+      if n_trials < min_trials_needed:
+        num_skipped_trials += n_trials
+        continue
+
+      # Shuffle trials for this subject
+      indices_array = np.array(indices)
+      np.random.shuffle(indices_array)
+
+      # Calculate split points based on proportions
+      # Ensure each active partition gets at least 1 trial
+      split_sizes = [max(1, int(n_trials * p)) for _, p in active_partitions]
+
+      # Adjust if we allocated too many (due to rounding and min=1)
+      total_allocated = sum(split_sizes)
+      if total_allocated > n_trials:
+        # Reduce from largest partitions first
+        excess = total_allocated - n_trials
+        for i in sorted(
+          range(len(split_sizes)), key=lambda i: split_sizes[i], reverse=True
+        ):
+          if excess == 0:
+            break
+          reduction = min(excess, split_sizes[i] - 1)
+          split_sizes[i] -= reduction
+          excess -= reduction
+
+      # Distribute remaining trials proportionally
+      total_allocated = sum(split_sizes)
+      remaining = n_trials - total_allocated
+      if remaining > 0 and total_allocated > 0:
+        # Distribute remaining trials according to proportions
+        proportions = np.array([p for _, p in active_partitions])
+        proportions = proportions / proportions.sum()
+        additional = np.zeros(len(split_sizes), dtype=int)
+        for _ in range(remaining):
+          # Add to partition with largest deficit
+          current_total = total_allocated + sum(additional)
+          if current_total > 0:
+            current_props = (split_sizes + additional) / current_total
+            deficits = proportions - current_props
+            idx = int(np.argmax(deficits))
+            additional[idx] += 1
+          else:
+            # Fallback: distribute round-robin
+            idx = _ % len(split_sizes)
+            additional[idx] += 1
+        split_sizes = [s + a for s, a in zip(split_sizes, additional)]
+
+      # Split the indices
+      start = 0
+      for (name, _), size in zip(active_partitions, split_sizes):
+        partition_indices[name].extend(indices_array[start : start + size].tolist())
+        start += size
+
+    # Create datasets for each partition
+    result: Dict[str, Union[EEGMusicDataset, int]] = {}
+
+    for name, _ in active_partitions:
+      ds = EEGMusicDataset()
+      ds.df = df.iloc[partition_indices[name]].reset_index(drop=True)
+      ds.music_collection = self.music_collection
+      result[name] = ds
+
+    if num_skipped_trials > 0:
+      result["num_skipped_trials"] = num_skipped_trials
+
+    return result
+
   def save(self, base_dir: Path) -> None:
     """
     Save dataset to directory with metadata and trial data.

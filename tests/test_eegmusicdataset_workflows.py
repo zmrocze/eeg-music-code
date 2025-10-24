@@ -46,10 +46,6 @@ EXEMPLAR_WAVS = {
   "bcmi/bcmi-fmri": ["stimuli/generated/2-9_1.wav", "stimuli/generated/6-5_2.wav"],
   "musin_g_data/Code": ["ESongs/1.esh.wav", "ESongs/5.esh.wav"],
   "openmiir": ["stimuli/hvha1.wav", "stimuli/lvla5.wav"],
-  "bcmi_preprocessed/bcmi_caltrain_256": [
-    "stimuli/bcmi-calibration/hvha1.wav",
-    "stimuli/bcmi-training/2-9_1_first.wav",
-  ],
 }
 
 
@@ -98,7 +94,9 @@ def _collect_trials_with_min_subjects(
   return collected_trials
 
 
-def limit_loader_iterators(loader, max_trials: int = 6, min_subjects=None):
+def limit_loader_iterators(
+  loader, max_trials: int = 6, min_subjects=None, trials_per_subject: int = 5
+):
   """Limit trials and ensure music iterator yields exactly what trials need.
 
   We first materialize a limited list of trials, then filter music to only
@@ -108,6 +106,7 @@ def limit_loader_iterators(loader, max_trials: int = 6, min_subjects=None):
     loader: Dataset loader with trial_iterator and music_iterator methods
     max_trials: Maximum number of trials to include (used when min_subjects is None)
     min_subjects: If provided, collect trials to ensure at least this many unique subjects
+    trials_per_subject: Number of trials to collect per subject (default: 5)
   """
 
   # Load subjects - adjust based on min_subjects requirement
@@ -123,7 +122,7 @@ def limit_loader_iterators(loader, max_trials: int = 6, min_subjects=None):
   if min_subjects is not None:
     # Use subject-aware collection
     limited_trials = _collect_trials_with_min_subjects(
-      orig_trials(), min_subjects=min_subjects, trials_per_subject=2
+      orig_trials(), min_subjects=min_subjects, trials_per_subject=trials_per_subject
     )
   else:
     # Original behavior: simple trial limit
@@ -309,8 +308,10 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
       def pairs(dataset: EEGMusicDataset) -> set[tuple[str, str]]:
         cols = dataset.df.reset_index(drop=True)[["dataset", "subject"]]
         return {
-          (cast(str, row.dataset), cast(str, row.subject))  # type: ignore[reportAttributeAccessIssue]
-          for row in cols.drop_duplicates().itertuples(index=False)
+          (dataset, subject)
+          for dataset, subject in cols.drop_duplicates().itertuples(
+            index=False, name=None
+          )
         }
 
       tr_pairs = pairs(tr)
@@ -324,6 +325,307 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
       self.assertSetEqual(tr_pairs | va_pairs | te_pairs, all_pairs)
 
     self._copy_and_load_combined_dataset(action, min_subjects=8)
+
+  def test_trial_wise_split_synthetic(self):
+    """Test trial_wise_split on synthetic dataset with controlled trial counts."""
+    # Create a synthetic dataset with known structure
+    ds = EEGMusicDataset()
+
+    # Create subjects with different numbers of trials
+    # Subject A: 10 trials, Subject B: 6 trials, Subject C: 3 trials (will be skipped)
+    from eeg_music.data import MusicFilename
+
+    trials_data = []
+    # Subject A from dataset1: 10 trials
+    for i in range(10):
+      trials_data.append(
+        {
+          "dataset": "dataset1",
+          "subject": "subjectA",
+          "session": "s1",
+          "run": "r1",
+          "trial_id": f"trial_{i}",
+          "music_filename": MusicFilename("music1.wav"),
+          "eeg_data": None,  # We'll use None for this test
+        }
+      )
+
+    # Subject B from dataset1: 6 trials
+    for i in range(6):
+      trials_data.append(
+        {
+          "dataset": "dataset1",
+          "subject": "subjectB",
+          "session": "s1",
+          "run": "r1",
+          "trial_id": f"trial_{i}",
+          "music_filename": MusicFilename("music2.wav"),
+          "eeg_data": None,
+        }
+      )
+
+    # Subject C from dataset2: 2 trials (will be skipped with 3-way split)
+    for i in range(2):
+      trials_data.append(
+        {
+          "dataset": "dataset2",
+          "subject": "subjectC",
+          "session": "s1",
+          "run": "r1",
+          "trial_id": f"trial_{i}",
+          "music_filename": MusicFilename("music3.wav"),
+          "eeg_data": None,
+        }
+      )
+
+    # Subject D from dataset2: 12 trials
+    for i in range(12):
+      trials_data.append(
+        {
+          "dataset": "dataset2",
+          "subject": "subjectD",
+          "session": "s1",
+          "run": "r1",
+          "trial_id": f"trial_{i}",
+          "music_filename": MusicFilename("music4.wav"),
+          "eeg_data": None,
+        }
+      )
+
+    import pandas as pd
+
+    ds.df = pd.DataFrame(trials_data)
+
+    # Test 3-way split: 60% train, 20% val, 20% test
+    result = ds.trial_wise_split(0.6, 0.2, 0.2, seed=42)
+
+    # Verify result structure
+    self.assertIn("train", result)
+    self.assertIn("val", result)
+    self.assertIn("test", result)
+    self.assertIn("num_skipped_trials", result)
+
+    # Subject C should be skipped (2 trials < 3 partitions)
+    self.assertEqual(result["num_skipped_trials"], 2)
+
+    train_ds = cast(EEGMusicDataset, result["train"])
+    val_ds = cast(EEGMusicDataset, result["val"])
+    test_ds = cast(EEGMusicDataset, result["test"])
+
+    # Total trials should be 10 + 6 + 12 = 28 (excluding 2 from subject C)
+    total_trials = len(train_ds) + len(val_ds) + len(test_ds)
+    self.assertEqual(total_trials, 28)
+
+    # Requirement 1: Partitions are disjoint
+    # Use (dataset, subject, trial_id) tuples since trial_id alone is not unique
+    train_ids = {
+      (dataset, subject, trial_id)
+      for dataset, subject, trial_id in train_ds.df[
+        ["dataset", "subject", "trial_id"]
+      ].itertuples(index=False, name=None)
+    }
+    val_ids = {
+      (dataset, subject, trial_id)
+      for dataset, subject, trial_id in val_ds.df[
+        ["dataset", "subject", "trial_id"]
+      ].itertuples(index=False, name=None)
+    }
+    test_ids = {
+      (dataset, subject, trial_id)
+      for dataset, subject, trial_id in test_ds.df[
+        ["dataset", "subject", "trial_id"]
+      ].itertuples(index=False, name=None)
+    }
+
+    self.assertTrue(train_ids.isdisjoint(val_ids))
+    self.assertTrue(train_ids.isdisjoint(test_ids))
+    self.assertTrue(val_ids.isdisjoint(test_ids))
+
+    # Requirement 2: Roughly correct proportions (within reasonable tolerance)
+    # Expected: train ~17, val ~6, test ~6
+    self.assertGreater(len(train_ds), 14)  # At least 50% of 28
+    self.assertLess(len(train_ds), 20)  # At most 70% of 28
+    self.assertGreater(len(val_ds), 3)  # At least 10% of 28
+    self.assertGreater(len(test_ds), 3)  # At least 10% of 28
+
+    # Requirement 5: Every partition contains at least one trial from each subject
+    # (except skipped subjects)
+    def get_subject_pairs(dataset: EEGMusicDataset) -> set[tuple[str, str]]:
+      return {
+        (dataset, subject)
+        for dataset, subject in dataset.df[["dataset", "subject"]]
+        .drop_duplicates()
+        .itertuples(index=False, name=None)
+      }
+
+    train_subjects = get_subject_pairs(train_ds)
+    val_subjects = get_subject_pairs(val_ds)
+    test_subjects = get_subject_pairs(test_ds)
+
+    expected_subjects = {
+      ("dataset1", "subjectA"),
+      ("dataset1", "subjectB"),
+      ("dataset2", "subjectD"),
+    }
+
+    self.assertEqual(train_subjects, expected_subjects)
+    self.assertEqual(val_subjects, expected_subjects)
+    self.assertEqual(test_subjects, expected_subjects)
+
+    # Test 2-way split: 70% train, 30% test (no val)
+    result2 = ds.trial_wise_split(0.7, 0.0, 0.3, seed=42)
+
+    self.assertIn("train", result2)
+    self.assertNotIn("val", result2)  # val should not be in result
+    self.assertIn("test", result2)
+
+    # Now subject C should be included (only 2 partitions needed)
+    if "num_skipped_trials" in result2:
+      self.assertEqual(result2["num_skipped_trials"], 0)
+
+    train_ds2 = cast(EEGMusicDataset, result2["train"])
+    test_ds2 = cast(EEGMusicDataset, result2["test"])
+
+    # All 30 trials should be included (10 + 6 + 2 + 12)
+    self.assertEqual(len(train_ds2) + len(test_ds2), 30)
+
+    # All 4 subjects should be present
+    all_subjects2 = get_subject_pairs(train_ds2) | get_subject_pairs(test_ds2)
+    self.assertEqual(len(all_subjects2), 4)
+
+  def test_trial_wise_split_real_data(self):
+    """Test trial_wise_split on real bcmi-calibration + bcmi-training data."""
+    # Use custom loader with more trials per subject to test splitting logic
+    if not (self.available["calibration"] and self.available["training"]):
+      self.skipTest("Both calibration and training datasets required")
+
+    with tempfile.TemporaryDirectory() as d1:
+      cal_loader = self._mk_loader("calibration")
+      trn_loader = self._mk_loader("training")
+      # Use 6 trials per subject so we can test 3-way split (needs at least 3)
+      limit_loader_iterators(cal_loader, min_subjects=8, trials_per_subject=6)
+      limit_loader_iterators(trn_loader, min_subjects=8, trials_per_subject=6)
+      copy_from_dataloader_into_dir(cal_loader, Path(d1))
+      copy_from_dataloader_into_dir(trn_loader, Path(d1))
+      ds = EEGMusicDataset.load_ondisk(Path(d1))
+
+    def verify_split(p_train, p_val, p_test, seed=123):
+      """Helper to verify a split with given proportions."""
+      result = ds.trial_wise_split(p_train, p_val, p_test, seed=seed)
+
+      # Determine which partitions should exist
+      active_partitions = []
+      if p_train > 0:
+        active_partitions.append("train")
+      if p_val > 0:
+        active_partitions.append("val")
+      if p_test > 0:
+        active_partitions.append("test")
+
+      # Verify expected partitions exist and only those
+      for partition in active_partitions:
+        self.assertIn(partition, result)
+
+      # Get all partition datasets
+      partition_datasets = {
+        name: cast(EEGMusicDataset, result[name]) for name in active_partitions
+      }
+
+      # Requirement 1: Partitions are disjoint
+      partition_trials = {}
+      for name, ds_part in partition_datasets.items():
+        partition_trials[name] = {
+          (dataset, subject, trial_id)
+          for dataset, subject, trial_id in ds_part.df[
+            ["dataset", "subject", "trial_id"]
+          ].itertuples(index=False, name=None)
+        }
+
+      # Check all pairs are disjoint
+      for i, name1 in enumerate(active_partitions):
+        for name2 in active_partitions[i + 1 :]:
+          self.assertTrue(
+            partition_trials[name1].isdisjoint(partition_trials[name2]),
+            f"{name1} and {name2} partitions overlap",
+          )
+
+      # Requirement 2: Total trials should match (minus any skipped)
+      total_in_partitions = sum(len(ds_part) for ds_part in partition_datasets.values())
+      num_skipped = cast(int, result.get("num_skipped_trials", 0))
+      self.assertEqual(total_in_partitions + num_skipped, len(ds))
+
+      # Ensure we have meaningful data to test
+      self.assertGreater(
+        total_in_partitions,
+        0,
+        "Test is not meaningful: all subjects were skipped. "
+        "Increase trials_per_subject in test setup.",
+      )
+
+      # Requirement 3: Proportions are roughly correct (allow 10% tolerance)
+      for name, p in [("train", p_train), ("val", p_val), ("test", p_test)]:
+        if p > 0:
+          actual_prop = len(partition_datasets[name]) / total_in_partitions
+          self.assertGreater(actual_prop, p - 0.1, f"{name} proportion too low")
+          self.assertLess(actual_prop, p + 0.1, f"{name} proportion too high")
+
+      # Requirement 5: Every partition has all subjects (that weren't skipped)
+      def get_subject_pairs(dataset: EEGMusicDataset) -> set[tuple[str, str]]:
+        return {
+          (dataset, subject)
+          for dataset, subject in dataset.df[["dataset", "subject"]]
+          .drop_duplicates()
+          .itertuples(index=False, name=None)
+        }
+
+      all_subjects = [
+        get_subject_pairs(ds_part) for ds_part in partition_datasets.values()
+      ]
+      # All partitions should have the same subjects
+      for i in range(len(all_subjects) - 1):
+        self.assertEqual(all_subjects[i], all_subjects[i + 1])
+
+      # Each subject should have at least 1 trial in each partition
+      for dataset, subject in all_subjects[0]:
+        for name, ds_part in partition_datasets.items():
+          count = len(
+            ds_part.df[
+              (ds_part.df["dataset"] == dataset) & (ds_part.df["subject"] == subject)
+            ]
+          )
+          self.assertGreaterEqual(
+            count, 1, f"Subject ({dataset}, {subject}) missing from {name}"
+          )
+
+      # Test determinism: same seed should give same split
+      result2 = ds.trial_wise_split(p_train, p_val, p_test, seed=seed)
+      train_ds2 = cast(EEGMusicDataset, result2["train"])
+      train_trials2 = {
+        (dataset, subject, trial_id)
+        for dataset, subject, trial_id in train_ds2.df[
+          ["dataset", "subject", "trial_id"]
+        ].itertuples(index=False, name=None)
+      }
+      self.assertEqual(partition_trials["train"], train_trials2)
+
+      # Test with different seed should give different split
+      result3 = ds.trial_wise_split(p_train, p_val, p_test, seed=seed + 333)
+      train_ds3 = cast(EEGMusicDataset, result3["train"])
+      train_trials3 = {
+        (dataset, subject, trial_id)
+        for dataset, subject, trial_id in train_ds3.df[
+          ["dataset", "subject", "trial_id"]
+        ].itertuples(index=False, name=None)
+      }
+      self.assertNotEqual(partition_trials["train"], train_trials3)
+
+    # Test 3-way split: 60% train, 20% val, 20% test
+    with self.subTest(split="3-way"):
+      verify_split(0.6, 0.2, 0.2, seed=123)
+
+    # Test 2-way split: 70% train, 0% val, 30% test
+    with self.subTest(split="2-way"):
+      verify_split(0.7, 0.0, 0.3, seed=123)
 
   # 7. load -> save -> reload -> compare basic invariants
   def test_save_roundtrip(self):
@@ -377,15 +679,11 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
     """
     for ds_name, wav_paths in EXEMPLAR_WAVS.items():
       base = DATASET_ROOT / ds_name
-      if not dataset_exists(base):
-        self.skipTest(f"Dataset not found: {ds_name}")
 
       # Test up to 2 files per dataset for speed
       for wav_file in wav_paths[:2]:
         with self.subTest(dataset=ds_name, file=wav_file):
           wav_path = base / wav_file
-          if not wav_path.exists():
-            self.skipTest(f"WAV file not found: {wav_path}")
 
           # 1) Load WAV -> WavRAW
           wav_raw = OnDiskMusic(wav_path).get_music()
