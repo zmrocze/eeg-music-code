@@ -2,7 +2,12 @@ from fractions import Fraction
 from pathlib import Path
 
 from lightning import Callback, LightningModule, Trainer
-from eeg_music.dataloader import create_collate_fn, load_and_create_dataloaders
+from eeg_music.dataloader import (
+  create_collate_fn,
+  load_and_create_dataloaders,
+  SubjectWiseSplit,
+  TrialWiseSplit,
+)
 import torch
 from skimage.metrics import structural_similarity
 from sklearn.metrics.pairwise import cosine_similarity
@@ -54,6 +59,9 @@ class TrainingConfig:
   ds_split_seed = 42
   ds_use_test_for_val = True
   ds_test_repeated_mul = 10
+  ds_split_type: SubjectWiseSplit | TrialWiseSplit = field(
+    default_factory=SubjectWiseSplit
+  )
 
   # ckpt_load_path: Optional[str] = None  # 'best', 'last', <path]>
 
@@ -134,6 +142,9 @@ class NoteOnsetsTrainingConfig:
   ds_use_test_for_val: bool = True
   ds_test_repeated_mul: int = 10
   ds_chunk_width: Fraction = Fraction(1, 2)
+  ds_split_type: SubjectWiseSplit | TrialWiseSplit = field(
+    default_factory=SubjectWiseSplit
+  )
 
   # Wandb logging
   wandb_log_model: Union[Literal["all"], bool] = "all"
@@ -483,7 +494,9 @@ class MainTraining:
     )
 
   def create_dataloaders(self):
-    self.dataloaders = load_and_create_dataloaders(self.config.data_path, self.config)
+    self.dataloaders = load_and_create_dataloaders(
+      self.config.data_path, self.config, split_type=self.config.ds_split_type
+    )
 
   def create_model(self):
     eegpt_config = EegptConfig(
@@ -666,6 +679,7 @@ class NoteOnsetsTraining(MainTraining):
         include_info=include_info, music_batch_fn=lambda x: x
       ),
       include_mapper=self.config.model_config.use_subject_specific,
+      split_type=self.config.ds_split_type,
     )
 
   def create_model(self):

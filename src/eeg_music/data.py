@@ -13,7 +13,6 @@ from typing import (
   Generic,
   List,
   TypedDict,
-  Tuple,
   cast,  # added
 )
 import numpy as np
@@ -754,7 +753,7 @@ class EEGMusicDataset(torchdata.Dataset):
 
   def subject_wise_split(
     self, p_train: float, p_val: float, seed: int = 42
-  ) -> Tuple["EEGMusicDataset", "EEGMusicDataset", "EEGMusicDataset"]:
+  ) -> Dict[str, "EEGMusicDataset"]:
     """Split subjects into train/val/test using two proportions.
 
     p_train: fraction of subjects for train
@@ -790,14 +789,14 @@ class EEGMusicDataset(torchdata.Dataset):
       ds.music_collection = self.music_collection
       return ds
 
-    return (
-      mk(subj_pairs[:n_tr]),
-      mk(subj_pairs[n_tr : n_tr + n_va]),
-      mk(subj_pairs[n_tr + n_va :]),
-    )
+    return {
+      "train": mk(subj_pairs[:n_tr]),
+      "val": mk(subj_pairs[n_tr : n_tr + n_va]),
+      "test": mk(subj_pairs[n_tr + n_va :]),
+    }
 
   def trial_wise_split(
-    self, p_train: float, p_val: float, p_test: float, seed: int = 42
+    self, p_train: float, p_val: float, seed: int = 42
   ) -> Dict[str, Union["EEGMusicDataset", int]]:
     """Split trials within each subject into train/val/test partitions.
 
@@ -805,16 +804,15 @@ class EEGMusicDataset(torchdata.Dataset):
     but splits their trials according to the given proportions.
 
     Args:
-      p_train: fraction of trials for train (must be > 0)
-      p_val: fraction of trials for val (must be >= 0)
-      p_test: fraction of trials for test (must be >= 0)
+      p_train: fraction of trials for train
+      p_val: fraction of trials for val; must satisfy p_train>0, p_val>=0, p_train+p_val<1
       seed: random seed for reproducibility
 
     Returns:
       Dict with keys:
-        - "train": EEGMusicDataset with train trials (if p_train > 0)
+        - "train": EEGMusicDataset with train trials
         - "val": EEGMusicDataset with val trials (if p_val > 0)
-        - "test": EEGMusicDataset with test trials (if p_test > 0)
+        - "test": EEGMusicDataset with test trials (remainder)
         - "num_skipped_trials": number of trials skipped (if any subjects were excluded)
 
     Requirements:
@@ -827,20 +825,16 @@ class EEGMusicDataset(torchdata.Dataset):
          non-zero partition, that subject is excluded entirely
       6. Returns num_skipped_trials if any subjects were excluded
     """
-    # Validate proportions
+    if not (0 < p_train < 1):
+      raise ValueError("p_train in (0,1)")
+    if not (0 <= p_val < 1):
+      raise ValueError("p_val in [0,1)")
+    if p_train + p_val >= 1:
+      raise ValueError("p_train + p_val < 1 required")
+
+    p_test = 1.0 - p_train - p_val
     partitions = [("train", p_train), ("val", p_val), ("test", p_test)]
     active_partitions = [(name, p) for name, p in partitions if p > 0]
-
-    if not active_partitions:
-      raise ValueError("At least one partition must have p > 0")
-
-    total_p = sum(p for _, p in active_partitions)
-    if not np.isclose(total_p, 1.0):
-      raise ValueError(f"Proportions must sum to 1.0, got {total_p}")
-
-    for name, p in active_partitions:
-      if p <= 0:
-        raise ValueError(f"{name} proportion must be > 0 if included, got {p}")
 
     min_trials_needed = len(active_partitions)
 

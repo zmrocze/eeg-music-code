@@ -2,6 +2,7 @@ from fractions import Fraction
 import torch
 from torch.utils.data import DataLoader
 from typing import List, Dict, Callable, Any, Sequence
+from dataclasses import dataclass
 from .subject_specific import SubjectDatasetMapper
 from .data import (
   EEGMusicDataset,
@@ -20,6 +21,16 @@ from .emotion_utils import parse_music_emotion
 from pathlib import Path
 
 
+@dataclass
+class SubjectWiseSplit:
+  pass
+
+
+@dataclass
+class TrialWiseSplit:
+  pass
+
+
 def after_loaded_ds(ds, trial_length_secs=Fraction(4, 1)):
   stratified = StratifiedSamplingDataset(
     ds,
@@ -33,13 +44,33 @@ def after_loaded_ds(ds, trial_length_secs=Fraction(4, 1)):
 
 
 def load_and_create_dataloaders(
-  ds_path: Path, config, collate_fn=None, include_mapper: bool = False
+  ds_path: Path,
+  config,
+  collate_fn=None,
+  include_mapper: bool = False,
+  split_type: SubjectWiseSplit | TrialWiseSplit = SubjectWiseSplit(),
 ) -> Dict[str, Any]:
   # Path("./datasets/bcmi_combined_prepared_mel_28ch")
   ds = EEGMusicDataset.load_ondisk(ds_path)
-  train_ds, val_ds, test_ds = ds.subject_wise_split(
-    p_train=config.ds_p_train, p_val=config.ds_p_val, seed=config.ds_split_seed
-  )
+
+  # Choose split method based on split_type
+  match split_type:
+    case SubjectWiseSplit():
+      split_result = ds.subject_wise_split(
+        p_train=config.ds_p_train,
+        p_val=config.ds_p_val,
+        seed=config.ds_split_seed,
+      )
+    case TrialWiseSplit():
+      split_result = ds.trial_wise_split(
+        p_train=config.ds_p_train,
+        p_val=config.ds_p_val,
+        seed=config.ds_split_seed,
+      )
+
+  train_ds = split_result["train"]
+  val_ds = split_result.get("val", split_result["test"])  # fallback to test if no val
+  test_ds = split_result["test"]
 
   mapper = None
   if include_mapper:

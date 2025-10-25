@@ -302,7 +302,8 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
   # 6. subject_wise_split on merged dataset
   def test_subject_wise_split(self):
     def action(ds):
-      tr, va, te = ds.subject_wise_split(0.5, 0.0, seed=123)
+      split_result = ds.subject_wise_split(0.5, 0.0, seed=123)
+      tr, va, te = split_result["train"], split_result["val"], split_result["test"]
       self.assertEqual(len(tr) + len(va) + len(te), len(ds))
 
       def pairs(dataset: EEGMusicDataset) -> set[tuple[str, str]]:
@@ -396,8 +397,8 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
 
     ds.df = pd.DataFrame(trials_data)
 
-    # Test 3-way split: 60% train, 20% val, 20% test
-    result = ds.trial_wise_split(0.6, 0.2, 0.2, seed=42)
+    # Test 3-way split: 60% train, 20% val, 20% test (p_test = 1 - 0.6 - 0.2 = 0.2)
+    result = ds.trial_wise_split(0.6, 0.2, seed=42)
 
     # Verify result structure
     self.assertIn("train", result)
@@ -473,7 +474,7 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
     self.assertEqual(test_subjects, expected_subjects)
 
     # Test 2-way split: 70% train, 30% test (no val)
-    result2 = ds.trial_wise_split(0.7, 0.0, 0.3, seed=42)
+    result2 = ds.trial_wise_split(0.7, 0.0, seed=42)  # p_test = 1 - 0.7 - 0.0 = 0.3
 
     self.assertIn("train", result2)
     self.assertNotIn("val", result2)  # val should not be in result
@@ -511,7 +512,8 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
 
     def verify_split(p_train, p_val, p_test, seed=123):
       """Helper to verify a split with given proportions."""
-      result = ds.trial_wise_split(p_train, p_val, p_test, seed=seed)
+      # Note: p_test is calculated as 1 - p_train - p_val in trial_wise_split
+      result = ds.trial_wise_split(p_train, p_val, seed=seed)
 
       # Determine which partitions should exist
       active_partitions = []
@@ -598,7 +600,7 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
           )
 
       # Test determinism: same seed should give same split
-      result2 = ds.trial_wise_split(p_train, p_val, p_test, seed=seed)
+      result2 = ds.trial_wise_split(p_train, p_val, seed=seed)
       train_ds2 = cast(EEGMusicDataset, result2["train"])
       train_trials2 = {
         (dataset, subject, trial_id)
@@ -609,7 +611,7 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
       self.assertEqual(partition_trials["train"], train_trials2)
 
       # Test with different seed should give different split
-      result3 = ds.trial_wise_split(p_train, p_val, p_test, seed=seed + 333)
+      result3 = ds.trial_wise_split(p_train, p_val, seed=seed + 333)
       train_ds3 = cast(EEGMusicDataset, result3["train"])
       train_trials3 = {
         (dataset, subject, trial_id)
@@ -1195,9 +1197,10 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
         reloaded_ds = EEGMusicDataset.load_ondisk(save_path)
 
         # Step 3: Apply subject_wise_split
-        train_ds, val_ds, test_ds = reloaded_ds.subject_wise_split(
-          p_train=0.5, p_val=0.25, seed=42
-        )
+        split_result = reloaded_ds.subject_wise_split(p_train=0.5, p_val=0.25, seed=42)
+        train_ds = split_result["train"]
+        val_ds = split_result["val"]
+        test_ds = split_result["test"]
 
         # Verify splits exist
         self.assertGreater(len(train_ds), 0)
