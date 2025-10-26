@@ -145,7 +145,6 @@ def test_subject_specific_linear_basic():
   model = SubjectSpecificLinear(
     num_subjects=num_subjects,
     num_channels=num_channels,
-    trainable_weights=False,
   )
 
   # Create dummy EEG data
@@ -172,7 +171,6 @@ def test_subject_specific_linear_with_onehot():
   model = SubjectSpecificLinear(
     num_subjects=num_subjects,
     num_channels=num_channels,
-    trainable_weights=False,
   )
 
   eeg = torch.randn(batch_size, num_channels, timepoints)
@@ -193,7 +191,6 @@ def test_subject_specific_linear_trainable_weights():
   model = SubjectSpecificLinear(
     num_subjects=2,
     num_channels=3,
-    trainable_weights=True,
   )
 
   # Check that weights are parameters
@@ -220,19 +217,6 @@ def test_subject_specific_linear_trainable_weights():
   assert torch.allclose(output[1, 0, :], torch.ones(10))
 
 
-def test_subject_specific_linear_fixed_weights():
-  """Test that fixed weights are not trainable."""
-  model = SubjectSpecificLinear(
-    num_subjects=2,
-    num_channels=3,
-    trainable_weights=False,
-  )
-
-  # Check that weights are buffers, not parameters
-  assert not isinstance(model.weights, torch.nn.Parameter)
-  assert "weights" in model._buffers
-
-
 def test_subject_specific_linear_different_transformations():
   """Test that different subjects get different transformations."""
   num_subjects = 2
@@ -242,7 +226,6 @@ def test_subject_specific_linear_different_transformations():
   model = SubjectSpecificLinear(
     num_subjects=num_subjects,
     num_channels=num_channels,
-    trainable_weights=True,
   )
 
   # Set up different transformations for each subject
@@ -291,7 +274,6 @@ def test_full_pipeline_example():
   model = SubjectSpecificLinear(
     num_subjects=mapper.num_subjects,
     num_channels=num_channels,
-    trainable_weights=False,
   )
 
   # Step 4: Create dummy EEG batch
@@ -319,7 +301,6 @@ def test_gradient_flow_with_trainable_weights():
   model = SubjectSpecificLinear(
     num_subjects=2,
     num_channels=3,
-    trainable_weights=True,
   )
 
   eeg = torch.randn(4, 3, 10, requires_grad=True)
@@ -363,11 +344,9 @@ if __name__ == "__main__":
   model = SubjectSpecificLinear(
     num_subjects=mapper.num_subjects,
     num_channels=4,
-    trainable_weights=True,
   )
 
   print(f"\nModel created with {mapper.num_subjects} subjects, 4 channels")
-  print(f"Trainable weights: {model.trainable_weights}")
   print(f"Weight matrix shape: {model.weights.shape}")
 
   # Create dummy data

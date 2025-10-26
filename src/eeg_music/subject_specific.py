@@ -40,22 +40,16 @@ class SubjectSpecificLinear(nn.Module):
   on the channel dimension.
   """
 
-  def __init__(
-    self, num_subjects: int, num_channels: int, trainable_weights: bool = False
-  ):
+  def __init__(self, num_subjects: int, num_channels: int):
     super().__init__()
     self.num_subjects = num_subjects
     self.num_channels = num_channels
-    self.trainable_weights = trainable_weights
 
     # Initialize weight matrices as identity (preserves input by default)
     # Shape: (num_subjects, num_channels, num_channels)
     weight_init = torch.eye(num_channels).unsqueeze(0).repeat(num_subjects, 1, 1)
 
-    if trainable_weights:
-      self.weights = nn.Parameter(weight_init)
-    else:
-      self.register_buffer("weights", weight_init)
+    self.weights = nn.Parameter(weight_init)
 
   def forward(self, eeg: torch.Tensor, subject_ids: torch.Tensor) -> torch.Tensor:
     """Apply subject-specific linear transformation.

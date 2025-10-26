@@ -29,7 +29,6 @@ def test_eegnet_wrapper_with_subject_specific():
     eeg_sample_rate=256,
     model_config=EEGNetConfig(),
     subject_specific_mapper=mapper,
-    subject_specific_trainable=False,
   )
 
   # Test forward pass
@@ -40,22 +39,6 @@ def test_eegnet_wrapper_with_subject_specific():
   output = model(x, subject_ids)
 
   assert output.shape == (batch_size,)
-  assert model.subject_specific is not None
-  assert not isinstance(model.subject_specific.weights, torch.nn.Parameter)
-
-
-def test_eegnet_wrapper_subject_specific_trainable():
-  """Test that trainable subject-specific weights are parameters."""
-  mapper = SubjectDatasetMapper()
-  mapper.add_subject("dataset1", "S01")
-
-  model = EEGNetWrapper(
-    chunk_width=128,
-    num_channels=4,
-    subject_specific_mapper=mapper,
-    subject_specific_trainable=True,
-  )
-
   assert model.subject_specific is not None
   assert isinstance(model.subject_specific.weights, torch.nn.Parameter)
 
@@ -105,7 +88,6 @@ def test_eegnet_lightning_with_subject_specific():
     window_start=0,
     window_end=64,
     use_subject_specific=True,
-    subject_specific_trainable=False,
   )
 
   model = EEGNetLightning(config, subject_mapper=mapper)
@@ -209,7 +191,6 @@ def test_subject_specific_gradients_flow():
     chunk_width=128,
     num_channels=4,
     use_subject_specific=True,
-    subject_specific_trainable=True,
   )
 
   model = EEGNetLightning(config, subject_mapper=mapper)

@@ -106,7 +106,6 @@ class EEGNetWrapper(nn.Module):
       num_channels: Number of EEG channels (electrodes)
       model_config: Model-specific configuration (determines which model to use)
       subject_specific_mapper: Optional mapper for subject-specific preprocessing
-      subject_specific_trainable: Whether subject-specific weights are trainable
       **model_kwargs: Additional keyword arguments to override config values
   """
 
@@ -119,7 +118,6 @@ class EEGNetWrapper(nn.Module):
       "EEGNetConfig | FBCNetConfig | TSCeptionConfig | ATCNetConfig"
     ] = None,
     subject_specific_mapper: Optional[SubjectDatasetMapper] = None,
-    subject_specific_trainable: bool = False,
     **model_kwargs,
   ):
     super().__init__()
@@ -136,7 +134,6 @@ class EEGNetWrapper(nn.Module):
       self.subject_specific = SubjectSpecificLinear(
         num_subjects=subject_specific_mapper.num_subjects,
         num_channels=num_channels,
-        trainable_weights=subject_specific_trainable,
       )
     else:
       self.subject_specific = None
@@ -305,7 +302,6 @@ class NoteOnsetModelConfig:
       pos_weight: Positive class weight for BCEWithLogitsLoss (to handle class imbalance)
       optimizer: Optimizer to use
       use_subject_specific: Enable subject-specific linear preprocessing
-      subject_specific_trainable: Whether subject-specific weights are trainable
   """
 
   model_config: EEGNetConfig | FBCNetConfig | TSCeptionConfig | ATCNetConfig = field(
@@ -318,9 +314,8 @@ class NoteOnsetModelConfig:
   window_end: int = 256
   lr_config: float | LRCosine = 1e-4
   pos_weight: Optional[float] = None
-  optimizer: UseAdamW | UseSGD = UseAdamW()
+  optimizer: UseAdamW | UseSGD = field(default_factory=UseAdamW)
   use_subject_specific: bool = False
-  subject_specific_trainable: bool = False
 
 
 def has_onset_in_window(
@@ -382,7 +377,6 @@ class EEGNetLightning(LightningModule):
       eeg_sample_rate=config.eeg_sample_rate,
       model_config=config.model_config,
       subject_specific_mapper=subject_mapper,
-      subject_specific_trainable=config.subject_specific_trainable,
       **model_kwargs,
     )
 
