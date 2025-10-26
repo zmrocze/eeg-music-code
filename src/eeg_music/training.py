@@ -710,25 +710,33 @@ class NoteOnsetsTraining(MainTraining):
 
   def log_hyperparameters(self):
     """Log EEGNet-specific hyperparameters to wandb."""
+    # Convert model-specific config to dict and prefix keys
+    model_config_dict = {
+      f"model_{k}": v for k, v in asdict(self.config.model_config.model_config).items()
+    }
+
     params_to_log = {
       # Model structure
       "trainable_params_total": count_n_params(self.model),
-      "model_type": self.config.model_config.model_type,
+      "model_config_type": type(self.config.model_config.model_config).__name__,
       "chunk_width": self.config.model_config.chunk_width,
       "num_channels": self.config.model_config.num_channels,
-      "num_bands": self.config.model_config.num_bands,
-      # Data processing
       "eeg_sample_rate": self.config.model_config.eeg_sample_rate,
+      # Window parameters
       "window_start": self.config.model_config.window_start,
       "window_end": self.config.model_config.window_end,
       # Training
+      "lr_config": str(self.config.model_config.lr_config),
       "pos_weight": self.config.model_config.pos_weight,
+      "use_subject_specific": self.config.model_config.use_subject_specific,
+      "subject_specific_trainable": self.config.model_config.subject_specific_trainable,
       # Dataloader params
       "dataloader_train_size": len(self.dataloaders["train"]),
       "dataloader_val_size": len(self.dataloaders["val"]),
       "dataloader_test_size": len(self.dataloaders["test"]),
       "batch_size": self.config.batch_size,
       "num_workers": self.config.data_loader_num_workers,
+      **model_config_dict,  # Add model-specific config values
     }
     self.wandb_logger.log_hyperparams(params_to_log)
 
