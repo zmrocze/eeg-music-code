@@ -681,6 +681,8 @@ class NoteOnsetsTraining(MainTraining):
       include_mapper=self.config.model_config.use_subject_specific,
       split_type=self.config.ds_split_type,
     )
+    if self.config.ds_split_type == TrialWiseSplit:
+      assert self.dataloaders["num_skipped_trials"] == 0
 
   def create_model(self):
     """Create EEGNet model, loading from checkpoint if available."""

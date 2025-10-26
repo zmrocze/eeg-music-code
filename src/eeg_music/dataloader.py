@@ -117,10 +117,12 @@ def load_and_create_dataloaders(
     prefetch_factor=config.prefetch_factor,
     collate_fn=collate_fn,
   )
-
   result: Dict[str, Any] = {"train": train_dl, "val": val_dl, "test": test_dl}
   if include_mapper and mapper is not None:
     result["mapper"] = mapper
+  if "num_skipped_trials" in split_result:
+    result["num_skipped_trials"] = split_result["num_skipped_trials"]
+
   return result
 
 
