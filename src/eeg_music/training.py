@@ -510,6 +510,7 @@ class MainTraining:
     freeze_all_except_head_and_adapters(self.model, verbose=True)
 
   def initialize_logger(self):
+    wandb.finish()
     self.wandb_logger = WandbLogger(
       project=self.config.project_name,
       name=f"{self.config.run_name}-{self.config.run_extra_name}-{self.config.randint}",
