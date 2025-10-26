@@ -320,7 +320,21 @@ class EegptConfig:
   # prefetch_factor: int = 2
 
 
-def mk_optimizer_and_lr_scheduler(trainable_params, lr_config: float | LRCosine):
+@dataclass
+class UseAdamW:
+  pass
+
+
+@dataclass
+class UseSGD:
+  pass
+
+
+def mk_optimizer_and_lr_scheduler(
+  trainable_params,
+  lr_config: float | LRCosine,
+  optimizer: UseAdamW | UseSGD = UseAdamW(),
+):
   """
   Create optimizer and learning rate scheduler.
 
@@ -328,19 +342,27 @@ def mk_optimizer_and_lr_scheduler(trainable_params, lr_config: float | LRCosine)
     trainable_params: Iterator of parameters to optimize
     lr_config: Learning rate config - either a float or LRCosine scheduler config
   """
+
+  def mk_optimizer(lr):
+    match optimizer:
+      case UseAdamW():
+        return torch.optim.AdamW(trainable_params, lr=lr)
+      case UseSGD():
+        return torch.optim.SGD(trainable_params, lr=lr)
+
   if isinstance(lr_config, float):
-    optimizer = torch.optim.AdamW(trainable_params, lr=lr_config)
-    return optimizer, None
+    opt = mk_optimizer(lr_config)
+    return opt, None
   elif isinstance(lr_config, LRCosine):
-    optimizer = torch.optim.AdamW(trainable_params, lr=lr_config.max_lr)
+    opt = mk_optimizer(lr_config.max_lr)
     lr_scheduler = CosineAnnealingWarmRestarts(
-      optimizer,
+      opt,
       T_0=lr_config.T_0,
       T_mult=lr_config.T_mult,
       eta_min=lr_config.eta_min,
       last_epoch=lr_config.last_epoch,
     )
-    return optimizer, lr_scheduler
+    return opt, lr_scheduler
   else:
     raise ValueError(f"Unknown lr_config type: {type(lr_config)}")
 

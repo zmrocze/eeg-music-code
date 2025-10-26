@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from lightning.pytorch import LightningModule
 from torcheeg.models import EEGNet as TorchEEGNet, FBCNet, TSCeption, ATCNet
 
-from eeg_music.eegpt import mk_optimizer_and_lr_scheduler, LRCosine
+from eeg_music.eegpt import UseAdamW, UseSGD, mk_optimizer_and_lr_scheduler, LRCosine
 from .data import NoteOnsets
 from .subject_specific import SubjectSpecificLinear, SubjectDatasetMapper
 
@@ -303,6 +303,7 @@ class NoteOnsetModelConfig:
       window_end: End sample index of target window (constant for all samples)
       lr_config: Learning rate config - either a float or LRCosine scheduler config
       pos_weight: Positive class weight for BCEWithLogitsLoss (to handle class imbalance)
+      optimizer: Optimizer to use
       use_subject_specific: Enable subject-specific linear preprocessing
       subject_specific_trainable: Whether subject-specific weights are trainable
   """
@@ -317,6 +318,7 @@ class NoteOnsetModelConfig:
   window_end: int = 256
   lr_config: float | LRCosine = 1e-4
   pos_weight: Optional[float] = None
+  optimizer: UseAdamW | UseSGD = UseAdamW()
   use_subject_specific: bool = False
   subject_specific_trainable: bool = False
 
@@ -379,7 +381,7 @@ class EEGNetLightning(LightningModule):
       num_channels=config.num_channels,
       eeg_sample_rate=config.eeg_sample_rate,
       model_config=config.model_config,
-      subject_specific_mapper=subject_mapper if config.use_subject_specific else None,
+      subject_specific_mapper=subject_mapper,
       subject_specific_trainable=config.subject_specific_trainable,
       **model_kwargs,
     )
@@ -516,7 +518,7 @@ class EEGNetLightning(LightningModule):
 
   def configure_optimizers(self):
     optimizer, lr_scheduler = mk_optimizer_and_lr_scheduler(
-      self.model.parameters(), self.config.lr_config
+      self.model.parameters(), self.config.lr_config, self.config.optimizer
     )
     if lr_scheduler is None:
       return optimizer
