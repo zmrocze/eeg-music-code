@@ -730,7 +730,6 @@ class NoteOnsetsTraining(MainTraining):
       "lr_config": str(self.config.model_config.lr_config),
       "pos_weight": self.config.model_config.pos_weight,
       "use_subject_specific": self.config.model_config.use_subject_specific,
-      "subject_specific_trainable": self.config.model_config.subject_specific_trainable,
       # Dataloader params
       "dataloader_train_size": len(self.dataloaders["train"]),
       "dataloader_val_size": len(self.dataloaders["val"]),
