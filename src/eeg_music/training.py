@@ -58,6 +58,8 @@ class TrainingConfig:
   ds_p_val = 0.0
   ds_split_seed = 42
   ds_use_test_for_val = True
+  ds_train_repeated_mul = 1
+  ds_val_repeated_mul = 1
   ds_test_repeated_mul = 10
   ds_split_type: SubjectWiseSplit | TrialWiseSplit = field(
     default_factory=SubjectWiseSplit
@@ -140,6 +142,8 @@ class NoteOnsetsTrainingConfig:
   ds_p_val: float = 0.0
   ds_split_seed: int = 42
   ds_use_test_for_val: bool = True
+  ds_train_repeated_mul: int = 1
+  ds_val_repeated_mul: int = 1
   ds_test_repeated_mul: int = 10
   ds_chunk_width: Fraction = Fraction(1, 2)
   ds_split_type: SubjectWiseSplit | TrialWiseSplit = field(

@@ -86,8 +86,17 @@ def load_and_create_dataloaders(
   dereferenced_tst = after_loaded_ds(test_ds, trial_length_secs=trial_length_secs)
   if config.ds_use_test_for_val:  # for when p_val=0
     dereferenced_val = dereferenced_tst
-  if config.ds_test_repeated_mul > 1:
-    dereferenced_tst = RepeatedDataset(dereferenced_tst, config.ds_test_repeated_mul)
+
+  ds_train_repeated_mul = getattr(config, "ds_train_repeated_mul", 1)
+  ds_val_repeated_mul = getattr(config, "ds_val_repeated_mul", 1)
+  ds_test_repeated_mul = getattr(config, "ds_test_repeated_mul", 1)
+
+  if ds_train_repeated_mul > 1:
+    dereferenced = RepeatedDataset(dereferenced, ds_train_repeated_mul)
+  if ds_val_repeated_mul > 1:
+    dereferenced_val = RepeatedDataset(dereferenced_val, ds_val_repeated_mul)
+  if ds_test_repeated_mul > 1:
+    dereferenced_tst = RepeatedDataset(dereferenced_tst, ds_test_repeated_mul)
 
   include_info = getattr(config, "include_info", False)
   if collate_fn is None:
