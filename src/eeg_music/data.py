@@ -26,6 +26,7 @@ import json
 import shutil
 import torch.utils.data as torchdata
 from speechbrain.dataio.batch import PaddedBatch
+import pydub
 import librosa
 import librosa.display as lbd
 import matplotlib.pyplot as plt
@@ -346,13 +347,16 @@ class OnDiskMusic(MusicData):
     file_ext = self.filepath.suffix.lower()
 
     if file_ext == ".mp3":
-      # Use librosa for MP3 files
-      raw_data, sample_rate = librosa.load(str(self.filepath), sr=None, mono=False)
-      # librosa returns float32 in range [-1, 1], which is what we want
-      # If stereo, convert to mono by averaging channels
-      if raw_data.ndim == 2:
-        raw_data = np.mean(raw_data, axis=0)
-      return WavRAW(raw_data=raw_data.astype(np.float32), sample_rate=int(sample_rate))
+      # Use pydub for MP3 files
+      audio = pydub.AudioSegment.from_mp3(str(self.filepath))
+      samples = np.array(audio.get_array_of_samples())
+      if audio.channels == 2:
+        samples = samples.reshape((-1, 2))
+        # Convert stereo to mono by averaging channels
+        samples = np.mean(samples, axis=0)
+      # Normalize to float32 in range [-1, 1]
+      raw_data: NDArray[np.float32] = samples.astype(np.float32) / (2**15)  # type: ignore
+      return WavRAW(raw_data=raw_data, sample_rate=audio.frame_rate)
     else:
       # Use scipy for WAV files
       sample_rate, raw_data = wavfile.read(self.filepath)
@@ -1022,9 +1026,9 @@ class EEGMusicDataset(torchdata.Dataset):
           filename=MusicFilename(filename=music_filename), dataset=dataset_name
         )
         expected_path = stimuli_dir / dataset_name / music_filename
-        if expected_path.suffix == ".wav" and not expected_path.exists():
-          # Try .wav.npz version
-          npz_path = expected_path.with_suffix(".wav.npz")
+        if expected_path.suffix in [".wav", ".mp3"] and not expected_path.exists():
+          # Try .wav.npz or .mp3.npz version
+          npz_path = Path(str(expected_path) + ".npz")
           if npz_path.exists():
             # Check if it's mel or onsets by inspecting keys
             with np.load(npz_path) as data:
