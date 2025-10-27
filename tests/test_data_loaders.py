@@ -292,6 +292,150 @@ class TestBCMILoaders(unittest.TestCase):
       self.assertEqual(runs, expected_tasks)
       print("  ✓ Uses task names instead of run numbers")
 
+  def test_bcmi_scores_loader(self):
+    """Test BCMIScoresLoader with movie score excerpts."""
+    print("\n🧪 Testing BCMI Scores loader...")
+
+    loader = BCMIScoresLoader(str(self.scores_path))
+
+    # Test initialization
+    self.assertIsNotNone(loader.subjects)
+    self.assertTrue(len(loader.subjects) > 0)
+    print(f"  ✓ Found {len(loader.subjects)} subjects")
+
+    # Test experimental info
+    exp_info = loader._get_experimental_info()
+    self.assertEqual(exp_info["paradigm_type"], "Movie Scores")
+    self.assertIn("Movie score excerpts", exp_info["music_type"])
+    print(f"  ✓ Experimental info: {exp_info['paradigm_type']}")
+
+    # Test loading single subject
+    if loader.subjects:
+      subject = loader.subjects[0]
+      data = loader.load_subject_data(subject, max_runs=2)
+
+      # Verify data structure
+      self.assertIsInstance(data, dict)
+
+      # Check for expected keys in loaded data
+      for session_key, session_data in data.items():
+        for run_key, run_data in session_data.items():
+          self.assertIn("raw", run_data)
+          self.assertIn("events", run_data)
+          self.assertIn("processed_events", run_data)
+          self.assertIn("duration", run_data)
+          self.assertIn("n_channels", run_data)
+          self.assertIn("sfreq", run_data)
+
+          # Check processed events
+          processed = run_data["processed_events"]
+
+          # Check for marker events (music stimulus codes 301-360)
+          if "marker_events" in processed:
+            marker_df = processed["marker_events"]
+            if not marker_df.empty:
+              # Look for music stimulus codes (301-360)
+              music_codes = marker_df[
+                (marker_df["trial_type"] >= 301) & (marker_df["trial_type"] <= 360)
+              ]
+              if not music_codes.empty:
+                print(
+                  f"  ✓ Found {len(music_codes)} music stimulus events in run {run_key}"
+                )
+                # Verify music codes are in valid range
+                for code in music_codes["trial_type"]:
+                  self.assertGreaterEqual(code, 301)
+                  self.assertLessEqual(code, 360)
+
+          print(
+            f"  ✓ Loaded subject {subject}, run {run_key}: "
+            f"{run_data['duration']:.1f}s, {run_data['n_channels']} channels"
+          )
+          break  # Test only first run
+        break  # Test only first session
+
+  def test_bcmi_scores_trial_iterator(self):
+    """Test trial_iterator for bcmi-scores dataset."""
+    print("\n🧪 Testing BCMI Scores trial iterator...")
+
+    loader = BCMIScoresLoader(str(self.scores_path))
+
+    # Load minimal data
+    if loader.subjects:
+      loader.load_subject_data(loader.subjects[0], max_runs=2)
+
+    # Test trial iterator
+    trials = list(loader.trial_iterator())
+
+    if trials:
+      print(f"  ✓ Generated {len(trials)} trials")
+
+      # Check first trial structure
+      trial = trials[0]
+      self.assertEqual(trial.dataset, "bcmi-scores")
+      self.assertIsNotNone(trial.subject)
+      self.assertIsNotNone(trial.eeg_data)
+      self.assertIsNotNone(trial.music_filename)
+
+      # Verify EEG data
+      eeg = trial.eeg_data.get_eeg()
+      self.assertIsInstance(eeg.raw_eeg, mne.io.BaseRaw)
+
+      # Check trial duration (should be ~20 seconds)
+      duration = eeg.length_seconds()
+      self.assertAlmostEqual(duration, 20.0, delta=0.5)
+      print(f"  ✓ Trial duration: {duration:.2f}s (expected ~20s)")
+
+      # Verify music filename format (should be like "001.mp3", "062.mp3", etc.)
+      music_filename = trial.music_filename.filename
+      self.assertTrue(music_filename.endswith(".mp3"))
+      self.assertTrue(music_filename[:3].isdigit())
+      print(f"  ✓ Music filename format: {music_filename}")
+
+      # Check that music numbers are in valid range (1-720)
+      music_number = int(music_filename[:3])
+      self.assertGreaterEqual(music_number, 1)
+      self.assertLessEqual(music_number, 720)
+      print(f"  ✓ Music number in valid range: {music_number}")
+    else:
+      print("  ⚠ No trials generated (dataset may be empty or not loaded)")
+
+  def test_bcmi_scores_music_iterator(self):
+    """Test music_iterator for bcmi-scores dataset."""
+    print("\n🧪 Testing BCMI Scores music iterator...")
+
+    loader = BCMIScoresLoader(str(self.scores_path))
+
+    # Test music iterator
+    music_files = list(loader.music_iterator())
+
+    if music_files:
+      print(f"  ✓ Found {len(music_files)} music files")
+
+      # Check first music file
+      music_ref, wav_raw = music_files[0]
+
+      # Verify music reference
+      self.assertIsInstance(music_ref, MusicFilename)
+      self.assertTrue(music_ref.filename.endswith(".mp3"))
+      print(f"  ✓ First music file: {music_ref.filename}")
+
+      # Verify WAV data
+      self.assertIsInstance(wav_raw, WavRAW)
+      self.assertTrue(wav_raw.is_not_empty())
+      self.assertGreater(wav_raw.length_seconds(), 0)
+      print(f"  ✓ Music duration: {wav_raw.length_seconds():.2f}s")
+      print(f"  ✓ Sample rate: {wav_raw.sample_rate} Hz")
+
+      # Check that filenames are sequential and properly formatted
+      for i, (music_ref, _) in enumerate(music_files[:5]):
+        filename = music_ref.filename
+        self.assertTrue(filename.endswith(".mp3"))
+        self.assertTrue(filename[:3].isdigit())
+        print(f"  ✓ Music file {i + 1}: {filename}")
+    else:
+      print("  ⚠ No music files found (stimuli directory may be missing)")
+
   def test_bcmi_statistics_and_queries(self):
     """Test dataset statistics and query methods."""
     print("\n🧪 Testing BCMI statistics and queries...")

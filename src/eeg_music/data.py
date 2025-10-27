@@ -208,6 +208,16 @@ class TrainingMusicId(MusicID):
 
 
 @dataclass
+class ScoresMusicId(MusicID):
+  """Music ID for scores data (movie score excerpts)."""
+
+  number: int  # 1-720, corresponds to files 001.mp3 to 720.mp3
+
+  def to_filename(self) -> str:
+    return f"{self.number:03d}.mp3"
+
+
+@dataclass
 class WavRAW(MusicData):
   """Data class containing raw WAV data and its rate."""
 
@@ -332,21 +342,34 @@ class OnDiskMusic(MusicData):
 
   def get_music(self) -> WavRAW:
     """Load and return the music as WavRAW data."""
-    sample_rate, raw_data = wavfile.read(self.filepath)
-    match raw_data.dtype:
-      case np.int16:
-        scale = 32768.0
-      case np.int32:
-        scale = 2147483648.0
-      case np.float32:
-        scale = 1.0
-      case np.float64:
-        scale = 1.0
-      case _:
-        raise ValueError(f"Unsupported WAV data type: {raw_data.dtype}")
+    # Check file extension to determine format
+    file_ext = self.filepath.suffix.lower()
 
-    raw_data = raw_data.astype(np.float32) / scale
-    return WavRAW(raw_data=raw_data, sample_rate=sample_rate)
+    if file_ext == ".mp3":
+      # Use librosa for MP3 files
+      raw_data, sample_rate = librosa.load(str(self.filepath), sr=None, mono=False)
+      # librosa returns float32 in range [-1, 1], which is what we want
+      # If stereo, convert to mono by averaging channels
+      if raw_data.ndim == 2:
+        raw_data = np.mean(raw_data, axis=0)
+      return WavRAW(raw_data=raw_data.astype(np.float32), sample_rate=int(sample_rate))
+    else:
+      # Use scipy for WAV files
+      sample_rate, raw_data = wavfile.read(self.filepath)
+      match raw_data.dtype:
+        case np.int16:
+          scale = 32768.0
+        case np.int32:
+          scale = 2147483648.0
+        case np.float32:
+          scale = 1.0
+        case np.float64:
+          scale = 1.0
+        case _:
+          raise ValueError(f"Unsupported WAV data type: {raw_data.dtype}")
+
+      raw_data = raw_data.astype(np.float32) / scale
+      return WavRAW(raw_data=raw_data, sample_rate=sample_rate)
 
   def save(self, filepath: Path) -> None:
     """Save the music data by copying the file."""

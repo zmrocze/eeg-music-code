@@ -76,6 +76,7 @@ from .data import (
   MusicFilename,
   OnDiskMusic,
   RawEeg,
+  ScoresMusicId,
   TrainingMusicId,
   TrialRow,
   WavRAW,
@@ -1180,7 +1181,7 @@ class BCMITempoLoader(BaseBCMILoader[EegData]):
       return {}
 
 
-class BCMIScoresLoader(BaseBCMILoader[EegData]):
+class BCMIScoresLoader(BaseBCMILoader[RawEeg]):
   """
   Loader for BCMI Scores dataset.
 
@@ -1190,29 +1191,78 @@ class BCMIScoresLoader(BaseBCMILoader[EegData]):
   def __init__(self, root_path: str, dataset_name: str = "bcmi-scores"):
     super().__init__(root_path, dataset_name)
 
-  def trial_iterator(self) -> Iterator[TrialRow[EegData]]:
+  def trial_iterator(self) -> Iterator[TrialRow[RawEeg]]:
     """
     Iterate over EEG trial snippets for movie scores data.
 
-    This method is not yet implemented for scores dataset due to its specialized
-    movie score stimulus paradigm.
+    For scores dataset, each trial is 20s corresponding to a movie score excerpt.
+    Music files are identified by event codes 301-360 (subtract 300 to get file number).
+
+    Yields:
+        TrialRow: Individual trial data with music_id, raw_eeg
     """
-    raise NotImplementedError(
-      "trial_iterator is not yet implemented for BCMIScoresLoader. "
-      "Use the standard data loading methods instead."
-    )
+    duration = 20  # secs - all scores trials are 20 seconds
+
+    for subject, session, run, r in self.loader_data_iter():
+      trial_counter = 0
+      marker_events = r["processed_events"].get("marker_events", pd.DataFrame())
+
+      if marker_events.empty:
+        continue
+
+      # Find music stimulus events (codes 301-360)
+      music_events = marker_events[
+        (marker_events["trial_type"] >= 301) & (marker_events["trial_type"] <= 360)
+      ]
+
+      for _, event in music_events.iterrows():
+        t0 = event["onset"]
+        music_code = int(event["trial_type"])
+        music_number = music_code - 300  # 301 -> 001.mp3, 362 -> 062.mp3, etc.
+
+        # Check if we have enough EEG data for this trial
+        if t0 + duration > r["raw"].times[-1]:
+          continue
+
+        music_filename = MusicFilename.from_musicid(ScoresMusicId(number=music_number))
+        trial_counter += 1
+
+        yield TrialRow(
+          dataset="bcmi-scores",
+          subject=subject,
+          session=session,
+          run=run,
+          trial_id=f"trial_{trial_counter}",
+          eeg_data=RawEeg(
+            raw_eeg=r["raw"].copy().crop(t0, t0 + duration, include_tmax=False)
+          ),
+          music_filename=music_filename,
+        )
 
   def music_iterator(self) -> Iterator[Tuple[MusicFilename, WavRAW]]:
     """
     Iterate over all music files in the scores dataset.
 
-    This method is not yet implemented for scores dataset due to its specialized
-    movie score paradigm.
+    Yields:
+        Tuple of (MusicFilename, WavRAW) pairs for each movie score file
     """
-    raise NotImplementedError(
-      "music_iterator is not yet implemented for BCMIScoresLoader. "
-      "Use the standard data loading methods instead."
-    )
+    # Music files are in likely_stimuli/Set1/Set1/ directory
+    stimuli_dir = self.root_path / "likely_stimuli" / "Set1" / "Set1"
+
+    if not stimuli_dir.exists():
+      return
+
+    # Iterate through all numbered music files (001.mp3 to 720.mp3)
+    for mp3_file in sorted(stimuli_dir.glob("*.mp3")):
+      filename = mp3_file.name
+      # Parse filename like "001.mp3" -> number=1
+      if filename.endswith(".mp3") and filename[:3].isdigit():
+        number = int(filename[:3])
+        music_id = ScoresMusicId(number=number)
+        music_ref = MusicFilename.from_musicid(music_id)
+
+        wav_raw = OnDiskMusic(filepath=mp3_file).get_music()
+        yield music_ref, wav_raw
 
   def _get_experimental_info(self) -> Dict[str, Any]:
     return {
