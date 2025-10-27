@@ -1143,6 +1143,7 @@ def prepare_trial(
   apply_mel: Optional[MelParams] = None,
   # remove_channels: Optional[List[str]] = None,
   pick_channels: Optional[List[str]] = None,
+  max_len: Optional[float] = None,
 ) -> TrialData[RawEeg, WavRAW | MelRaw | NoteOnsets]:
   """Set common length between music and eeg, resample eeg and filter eeg, transform music to mel spectrogram.
 
@@ -1156,7 +1157,7 @@ def prepare_trial(
   music = trial.music_data.get_music()
   m_len = music.length_seconds()
   e_len = eeg.n_times / eeg.info["sfreq"]
-  min_len = min(m_len, e_len)
+  min_len = min(m_len, e_len, max_len if max_len is not None else float("inf"))
 
   match music:
     case WavRAW(raw_data=raw, sample_rate=sr) as wav:
