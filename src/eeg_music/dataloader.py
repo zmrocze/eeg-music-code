@@ -49,6 +49,7 @@ def load_and_create_dataloaders(
   collate_fn=None,
   include_mapper: bool = False,
   split_type: SubjectWiseSplit | TrialWiseSplit = SubjectWiseSplit(),
+  after_loaded_ds=after_loaded_ds,
 ) -> Dict[str, Any]:
   # Path("./datasets/bcmi_combined_prepared_mel_28ch")
   ds = EEGMusicDataset.load_ondisk(ds_path)

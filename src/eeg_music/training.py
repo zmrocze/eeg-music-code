@@ -2,6 +2,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from lightning import Callback, LightningModule, Trainer
+from eeg_music.data import EEGMusicDataset, MappedDataset, rereference_trial
 from eeg_music.dataloader import (
   create_collate_fn,
   load_and_create_dataloaders,
@@ -782,6 +783,33 @@ class NoteOnsetsTraining(MainTraining):
       save_on_exc,
       LearningRateMonitor(logging_interval="step"),
     ] + optional_lr_finder
+
+
+class OverfitNoteOnsetsTraining(NoteOnsetsTraining):
+  """Custom training class that overrides dataloader creation."""
+
+  def create_dataloaders(self):
+    # Custom dataloader implementation
+    # Example: you can modify include_info, collate_fn, or other parameters
+    def after_loaded_ds(data: EEGMusicDataset, trial_length_secs) -> EEGMusicDataset:
+      mapped = MappedDataset(data, rereference_trial)
+      return mapped
+
+    include_info = (
+      self.config.include_info or self.config.model_config.use_subject_specific
+    )
+    self.dataloaders = load_and_create_dataloaders(
+      self.config.data_path,
+      self.config,
+      collate_fn=create_collate_fn(
+        include_info=include_info, music_batch_fn=lambda x: x
+      ),
+      include_mapper=self.config.model_config.use_subject_specific,
+      split_type=self.config.ds_split_type,
+      after_loaded_ds=after_loaded_ds,
+    )
+    if self.config.ds_split_type == TrialWiseSplit:
+      assert self.dataloaders["num_skipped_trials"] == 0
 
 
 def main(config=config) -> Tuple[LightningModule, Trainer, dict]:

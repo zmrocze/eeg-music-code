@@ -1195,7 +1195,8 @@ def prepare_trial(
     BaseRaw, eeg if eeg_resample is None else eeg.resample(eeg_resample)
   )
   eeg = eeg.crop(
-    tmax=(min(min_len, eeg.times[-1]))
+    tmax=(min(min_len, eeg.times[-1])),
+    include_tmax=False,
   )  # when l=e_len then eeg_times[-1] is that 1s/sample_rate early to l which errors
 
   if pick_channels:
