@@ -434,7 +434,7 @@ class OnDiskOnsets(MusicData):
 
 # @dataclass
 class RawEeg(EegData):
-  """EEG data stored in memory."""
+  """EEG data stored in memory as MNE Raw object."""
 
   def __init__(self, raw_eeg: BaseRaw):
     self.raw_eeg = raw_eeg
@@ -451,14 +451,49 @@ class RawEeg(EegData):
     return self.raw_eeg.n_times / sfreq
 
   def save(self, filepath: Path) -> None:
-    """Save the EEG data to a file."""
+    """Save the EEG data to an EDF file."""
     # mne.export.export_raw expects a Raw object, not a RawEeg wrapper
     mne.export.export_raw(filepath, self.raw_eeg, fmt="edf", overwrite=True)
 
 
 @dataclass
+class ArrayEeg(EegData):
+  """EEG data stored in memory as numpy array.
+
+  This is a more lightweight representation than RawEeg, storing just the
+  essential data and metadata without the full MNE Raw object overhead.
+  """
+
+  data: NDArray[np.float32]  # (n_channels, n_samples)
+  ch_names: List[str]
+  sfreq: float
+
+  def get_eeg(self) -> "RawEeg":
+    """Convert to RawEeg by constructing an MNE RawArray."""
+    info = mne.create_info(ch_names=self.ch_names, sfreq=self.sfreq, ch_types="eeg")
+    raw = mne.io.RawArray(data=self.data, info=info, verbose="error")
+    return RawEeg(raw_eeg=raw)
+
+  def length_seconds(self) -> float:
+    """Get the length of the EEG data in seconds."""
+    return self.data.shape[1] / self.sfreq
+
+  def save(self, filepath: Path) -> None:
+    """Save the EEG data to an NPZ file."""
+    # Ensure .npz extension
+    if filepath.suffix != ".npz":
+      filepath = filepath.with_suffix(".npz")
+    np.savez_compressed(
+      filepath,
+      data=self.data,
+      ch_names=self.ch_names,
+      sfreq=self.sfreq,
+    )
+
+
+@dataclass
 class OnDiskEeg(EegData):
-  """EEG data backed by a file on disk."""
+  """EEG data backed by an EDF file on disk."""
 
   filepath: Path
 
@@ -471,6 +506,33 @@ class OnDiskEeg(EegData):
 
   def save(self, filepath: Path) -> None:
     """Save the EEG data by copying the file."""
+    shutil.copy2(self.filepath, filepath)
+
+
+@dataclass
+class OnDiskArrayEeg(EegData):
+  """EEG data backed by an NPZ file on disk.
+
+  Expected archive keys: data, ch_names, sfreq, ch_types.
+  """
+
+  filepath: Path
+
+  def get_eeg(self) -> "RawEeg":
+    """Load and return the EEG data as RawEeg."""
+    d = np.load(self.filepath)
+    array_eeg = ArrayEeg(
+      data=d["data"],
+      ch_names=list(d["ch_names"]),
+      sfreq=float(d["sfreq"]),
+    )
+    return array_eeg.get_eeg()
+
+  def save(self, filepath: Path) -> None:
+    """Save the EEG data by copying the file."""
+    # Ensure .npz extension for consistency
+    if filepath.suffix != ".npz":
+      filepath = filepath.with_suffix(".npz")
     shutil.copy2(self.filepath, filepath)
 
 
@@ -533,8 +595,12 @@ class TrialData(Generic[E, M]):
     if isinstance(e, RawEeg):
       sf = float(e.raw_eeg.info["sfreq"])
       return f"RawEeg(sfreq={int(sf)}, chans={len(e.raw_eeg.ch_names)}, secs={e.raw_eeg.n_times / sf:.3f}, samples={e.raw_eeg.n_times})"
+    if isinstance(e, ArrayEeg):
+      return f"ArrayEeg(sfreq={int(e.sfreq)}, chans={len(e.ch_names)}, secs={e.length_seconds():.3f}, samples={e.data.shape[1]})"
     if isinstance(e, OnDiskEeg):
       return f"OnDiskEeg(path='{e.filepath.name}')"
+    if isinstance(e, OnDiskArrayEeg):
+      return f"OnDiskArrayEeg(path='{e.filepath.name}')"
     return type(e).__name__
 
   def pretty(self) -> str:
@@ -1060,6 +1126,14 @@ class EEGMusicDataset(torchdata.Dataset):
         trial_record["run"],
         trial_record["trial_id"],
       )
+
+      # Check for .npz file first (newer format), then fall back to .edf
+      eeg_npz_path = eeg_path.with_suffix(".npz")
+      if eeg_npz_path.exists():
+        eeg_data: EegData = OnDiskArrayEeg(filepath=eeg_npz_path)
+      else:
+        eeg_data = OnDiskEeg(filepath=eeg_path)
+
       rows.append(
         {
           "dataset": trial_record["dataset"],
@@ -1068,7 +1142,7 @@ class EEGMusicDataset(torchdata.Dataset):
           "run": trial_record["run"],
           "trial_id": trial_record["trial_id"],
           "music_filename": MusicFilename(filename=trial_record["music_filename"]),
-          "eeg_data": OnDiskEeg(filepath=eeg_path),
+          "eeg_data": eeg_data,
         }
       )
 
@@ -1154,6 +1228,11 @@ def prepare_trial(
   Optional music resampling, applied before mel transform if any.
   apply_mel: None -> keep music type; dict -> parameters for mel transform (see helper.wavraw_to_melspectrogram args).
   Supports WavRAW, MelRaw, and NoteOnsets music types.
+
+  Note: This function converts EEG to RawEeg (MNE Raw object) format, so it works with
+  ArrayEeg/OnDiskArrayEeg via the get_eeg() method. However, operations like filtering,
+  resampling, and channel picking require MNE's functionality and will create a full
+  MNE Raw object in memory.
   """
 
   eeg: BaseRaw = trial.eeg_data.get_eeg().raw_eeg
@@ -1217,7 +1296,11 @@ def prepare_trial(
 def rereference_trial(
   trial: TrialData[EegData, MusicData],
 ) -> TrialData[EegData, MusicData]:
-  """Rereference the EEG data in a trial."""
+  """Rereference the EEG data in a trial.
+
+  Note: This function works with ArrayEeg/OnDiskArrayEeg via get_eeg() but requires
+  MNE's rereferencing functionality, so it creates a full MNE Raw object in memory.
+  """
   eeg = trial.eeg_data.get_eeg().raw_eeg.copy()
   mne.set_eeg_reference(eeg, ref_channels="average", verbose="error")
   return TrialData(
