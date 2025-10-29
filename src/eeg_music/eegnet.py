@@ -15,6 +15,7 @@ class BinaryAccuracyCalc:
 
   Tracks true positives, true negatives, false positives, and false negatives
   to compute accuracy, recall (sensitivity), specificity, precision, and F1 score.
+  Also computes cumulative mean and standard deviation of raw logits.
   """
 
   def __init__(self):
@@ -22,6 +23,10 @@ class BinaryAccuracyCalc:
     self.tn = 0  # True Negatives
     self.fp = 0  # False Positives
     self.fn = 0  # False Negatives
+    # Cumulative statistics for logits using Welford's online algorithm
+    self.count = 0  # Total number of samples
+    self.mean = 0.0  # Running mean
+    self.m2 = 0.0  # Sum of squared differences from mean
 
   def update(self, logits: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5):
     """Update metrics with new logits and targets.
@@ -31,6 +36,15 @@ class BinaryAccuracyCalc:
       targets: Ground truth binary labels (batch_size,) - 0 or 1 or bool
       threshold: Threshold for converting probabilities to predictions (default: 0.5)
     """
+    # Update cumulative statistics for logits using Welford's online algorithm
+    logits_cpu = logits.detach().cpu()
+    for value in logits_cpu:
+      self.count += 1
+      delta = value.item() - self.mean
+      self.mean += delta / self.count
+      delta2 = value.item() - self.mean
+      self.m2 += delta * delta2
+
     # Apply sigmoid to get probabilities, then threshold to get binary predictions
     predictions = torch.sigmoid(logits) > threshold
 
@@ -47,7 +61,8 @@ class BinaryAccuracyCalc:
     """Compute all binary classification metrics.
 
     Returns:
-      Dictionary with keys: accuracy, recall, specificity, precision, f1_score
+      Dictionary with keys: accuracy, recall, specificity, precision, f1_score,
+                           logits_mean, logits_std
 
     Formulas:
       - Accuracy = (TP + TN) / (TP + TN + FP + FN)
@@ -55,6 +70,8 @@ class BinaryAccuracyCalc:
       - Specificity = TN / (TN + FP)
       - Precision = TP / (TP + FP)
       - F1 Score = 2 * (Precision * Recall) / (Precision + Recall)
+      - Logits Mean: cumulative mean of all logit values
+      - Logits Std: cumulative standard deviation of all logit values
     """
     total = self.tp + self.tn + self.fp + self.fn
 
@@ -77,12 +94,18 @@ class BinaryAccuracyCalc:
       else 0.0
     )
 
+    # Logits statistics
+    logits_mean = self.mean
+    logits_std = (self.m2 / self.count) ** 0.5 if self.count > 0 else 0.0
+
     return {
       "accuracy": accuracy,
       "recall": recall,
       "specificity": specificity,
       "precision": precision,
       "f1_score": f1_score,
+      "logits_mean": logits_mean,
+      "logits_std": logits_std,
     }
 
   def reset(self):
@@ -91,6 +114,9 @@ class BinaryAccuracyCalc:
     self.tn = 0
     self.fp = 0
     self.fn = 0
+    self.count = 0
+    self.mean = 0.0
+    self.m2 = 0.0
 
 
 class EEGNetWrapper(nn.Module):
