@@ -1538,6 +1538,86 @@ class StratifiedSamplingDataset(EEGMusicDataset):
     return trial
 
 
+class RobustNormalizedDataset(EEGMusicDataset):
+  """
+  Wrapper that applies per-channel robust normalization to EEG data.
+
+  Expects base dataset to contain ArrayEeg or OnDiskArrayEeg (with get_array method).
+  Calculates per-channel mean, 25th percentile, and 75th percentile during initialization.
+  Applies robust normalization: (x - median) / IQR where IQR = p75 - p25.
+  """
+
+  def __init__(self, base_dataset: EEGMusicDataset):
+    self.ds = base_dataset
+    self._calculate_statistics()
+
+  def _get_array_eeg(self, eeg_data: EegData) -> ArrayEeg:
+    """Get ArrayEeg from EegData, raising TypeError if not supported."""
+    if hasattr(eeg_data, "get_array"):
+      return eeg_data.get_array()  # type: ignore[reportUnknownAttributeAccess]
+    raise TypeError(
+      f"Expected ArrayEeg or OnDiskArrayEeg with get_array method, "
+      f"got {type(eeg_data).__name__}"
+    )
+
+  def _calculate_statistics(self) -> None:
+    """Calculate per-channel mean, 25th and 75th percentiles across all trials."""
+    all_data: List[NDArray[np.float32]] = []
+
+    for idx in range(len(self.ds)):
+      trial = self.ds[idx]
+      array_eeg = self._get_array_eeg(trial.eeg_data)
+      all_data.append(array_eeg.data)  # (n_channels, n_samples)
+
+    # Concatenate all data along time axis: (n_channels, total_samples)
+    concatenated = np.concatenate(all_data, axis=1)
+
+    # Calculate per-channel statistics
+    self.p25 = np.percentile(concatenated, 25, axis=1, keepdims=True)  # (n_channels, 1)
+    self.p75 = np.percentile(concatenated, 75, axis=1, keepdims=True)  # (n_channels, 1)
+    self.iqr = self.p75 - self.p25  # (n_channels, 1)
+
+    self.median = (self.p25 + self.p75) / 2  # (n_channels, 1)
+
+  @property
+  def df(self) -> pd.DataFrame:
+    return self.ds.df
+
+  @df.setter
+  def df(self, value: pd.DataFrame) -> None:
+    self.ds.df = value
+
+  @property
+  def music_collection(self) -> Dict[MusicRef, MusicData]:
+    return self.ds.music_collection
+
+  @music_collection.setter
+  def music_collection(self, value: Dict[MusicRef, MusicData]) -> None:  # type: ignore[reportIncompatibleVariableOverride]
+    self.ds.music_collection = value
+
+  def __len__(self) -> int:
+    return len(self.ds)
+
+  def __getitem__(self, idx: int) -> TrialData[EegData, MusicData]:
+    trial = self.ds[idx]
+    array_eeg = self._get_array_eeg(trial.eeg_data)
+    normalized_data = (array_eeg.data - self.median) / (self.iqr + 1e-8)
+    return TrialData(
+      dataset=trial.dataset,
+      subject=trial.subject,
+      session=trial.session,
+      run=trial.run,
+      trial_id=trial.trial_id,
+      music_filename=trial.music_filename,
+      eeg_data=ArrayEeg(
+        data=normalized_data.astype(np.float32),
+        ch_names=array_eeg.ch_names,
+        sfreq=array_eeg.sfreq,
+      ),
+      music_data=trial.music_data,
+    )
+
+
 class RepeatedDataset(torchdata.Dataset):
   def __init__(self, dataset, num_repeats):
     self.dataset = dataset
