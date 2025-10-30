@@ -1,7 +1,7 @@
 from fractions import Fraction
 import torch
 from torch.utils.data import DataLoader
-from typing import List, Dict, Callable, Any, Sequence
+from typing import List, Dict, Callable, Any, Optional, Sequence
 from dataclasses import dataclass
 from .subject_specific import SubjectDatasetMapper
 from .data import (
@@ -139,6 +139,7 @@ def load_and_create_dataloaders(
 def create_collate_fn(
   music_batch_fn: Callable[[Sequence[MelRaw | WavRAW | NoteOnsets]], Any],
   include_info: bool = False,
+  eeg_batch_fn: Optional[Callable[[Sequence[EegData]], Any]] = None,
 ) -> Callable[
   [List[TrialData[EegData, MusicData]]], Dict[str, torch.Tensor | Dict[str, Any]]
 ]:
@@ -151,18 +152,27 @@ def create_collate_fn(
       Collate function that converts list of TrialData[EegData, MelRaw] into batched tensors
   """
 
+  if eeg_batch_fn is None:
+
+    def default_eeg_batch_fn(eegs):
+      return torch.stack(
+        [
+          torch.tensor(trial.get_eeg().raw_eeg.get_data(), dtype=torch.float32)
+          for trial in eegs
+        ]
+      )
+
+    eeg_batch_fn = default_eeg_batch_fn
+
   def collate_fn(
     trials: List[TrialData[EegData, MusicData]],
   ) -> Dict[str, torch.Tensor | Dict[str, Any]]:
     # Extract EEG and music data as torch tensors
-    eegs = [
-      torch.tensor(trial.eeg_data.get_eeg().raw_eeg.get_data(), dtype=torch.float32)
-      for trial in trials
-    ]
+    eegs = [trial.eeg_data for trial in trials]
     music = [trial.music_data.get_music() for trial in trials]
 
     # Stack tensors along batch dimension
-    eeg_batch = torch.stack(eegs)
+    eeg_batch = eeg_batch_fn(eegs)
     music_batch = music_batch_fn(music)
 
     if include_info:

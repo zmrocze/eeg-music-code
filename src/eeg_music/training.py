@@ -2,7 +2,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from lightning import Callback, LightningModule, Trainer
-from eeg_music.data import EEGMusicDataset, MappedDataset, rereference_trial
+from eeg_music.data import EEGMusicDataset, RobustNormalizedDataset
 from eeg_music.dataloader import (
   create_collate_fn,
   load_and_create_dataloaders,
@@ -792,7 +792,8 @@ class OverfitNoteOnsetsTraining(NoteOnsetsTraining):
     # Custom dataloader implementation
     # Example: you can modify include_info, collate_fn, or other parameters
     def after_loaded_ds(data: EEGMusicDataset, trial_length_secs) -> EEGMusicDataset:
-      mapped = MappedDataset(data, rereference_trial)
+      # mapped = MappedDataset(data, rereference_trial)
+      mapped = RobustNormalizedDataset(data)
       return mapped
 
     include_info = (
@@ -802,7 +803,11 @@ class OverfitNoteOnsetsTraining(NoteOnsetsTraining):
       self.config.data_path,
       self.config,
       collate_fn=create_collate_fn(
-        include_info=include_info, music_batch_fn=lambda x: x
+        include_info=include_info,
+        music_batch_fn=lambda x: x,
+        eeg_batch_fn=lambda x: torch.stack(
+          [torch.from_numpy(a.get_array().data) for a in x]  # pyright: ignore[reportAttributeAccessIssue]
+        ),
       ),
       include_mapper=self.config.model_config.use_subject_specific,
       split_type=self.config.ds_split_type,
