@@ -13,6 +13,7 @@ from typing import (
   Generic,
   List,
   TypedDict,
+  Any,
   cast,  # added
 )
 import numpy as np
@@ -468,6 +469,10 @@ class ArrayEeg(EegData):
   ch_names: List[str]
   sfreq: float
 
+  def get_array(self) -> "ArrayEeg":
+    """Load and return the EEG data as ArrayEeg."""
+    return self
+
   def get_eeg(self) -> "RawEeg":
     """Convert to RawEeg by constructing an MNE RawArray."""
     info = mne.create_info(ch_names=self.ch_names, sfreq=self.sfreq, ch_types="eeg")
@@ -518,14 +523,18 @@ class OnDiskArrayEeg(EegData):
 
   filepath: Path
 
-  def get_eeg(self) -> "RawEeg":
-    """Load and return the EEG data as RawEeg."""
+  def get_array(self) -> "ArrayEeg":
+    """Load and return the EEG data as ArrayEeg."""
     d = np.load(self.filepath)
-    array_eeg = ArrayEeg(
+    return ArrayEeg(
       data=d["data"],
       ch_names=list(d["ch_names"]),
       sfreq=float(d["sfreq"]),
     )
+
+  def get_eeg(self) -> "RawEeg":
+    """Load and return the EEG data as RawEeg."""
+    array_eeg = self.get_array()
     return array_eeg.get_eeg()
 
   def save(self, filepath: Path) -> None:
@@ -1249,7 +1258,7 @@ def prepare_trial(
         wav = wav.resampled(new_sr=wav_resample)
         raw, sr = wav.raw_data, wav.sample_rate
       max_samples = int(min_len * sr)
-      music_cropped: MusicData = WavRAW(raw[:max_samples], sr)
+      music_cropped: WavRAW | MelRaw | NoteOnsets = WavRAW(raw[:max_samples], sr)
       # (optional) apply mel transform could go here if apply_mel is not None
       if apply_mel is not None:
         music_cropped = wavraw_to_melspectrogram(music_cropped, **apply_mel.as_kwargs())
@@ -1312,6 +1321,40 @@ def rereference_trial(
     music_filename=trial.music_filename,
     music_data=trial.music_data,
     eeg_data=RawEeg(eeg),
+  )
+
+
+def trial_to_arrayeeg(trial: TrialData[Any, M]) -> TrialData[ArrayEeg, M]:
+  """Convert trial's EEG data to ArrayEeg format.
+
+  This function extracts the raw numpy array and metadata from any EegData type
+  and returns a new trial with ArrayEeg. Useful for converting datasets to the
+  more lightweight array storage format.
+
+  Args:
+    trial: Trial with any EegData type
+
+  Returns:
+    New trial with same metadata but ArrayEeg as eeg_data
+  """
+  raw_eeg = trial.eeg_data.get_eeg()
+  raw = raw_eeg.raw_eeg
+
+  array_eeg = ArrayEeg(
+    data=np.asarray(raw.get_data(), dtype=np.float32),
+    ch_names=raw.ch_names,
+    sfreq=float(raw.info["sfreq"]),
+  )
+
+  return TrialData(
+    dataset=trial.dataset,
+    subject=trial.subject,
+    session=trial.session,
+    run=trial.run,
+    trial_id=trial.trial_id,
+    music_filename=trial.music_filename,
+    eeg_data=array_eeg,
+    music_data=trial.music_data,
   )
 
 

@@ -22,6 +22,11 @@ from eeg_music.data import (
   rereference_trial,
   MelParams,
   RepeatedDataset,
+  ArrayEeg,
+  OnDiskArrayEeg,
+  RawEeg,
+  OnDiskEeg,
+  trial_to_arrayeeg,
 )
 from eeg_music.onset_conversion import (
   trial_wavraw_to_noteonsets,
@@ -1355,6 +1360,278 @@ class TestEEGMusicDatasetWorkflows(unittest.TestCase):
         print(f"✓ First trial appeared {first_trial_count} times in test set")
 
     return self._copy_and_load_combined_dataset(action, min_subjects=8)
+
+  # 13. Test ArrayEeg conversion and save/load
+  def test_arrayeeg_conversion_and_roundtrip(self):
+    """Test converting trials to ArrayEeg and saving/loading as NPZ format.
+
+    This test verifies:
+    1. trial_to_arrayeeg() correctly converts RawEeg to ArrayEeg
+    2. ArrayEeg preserves data and metadata
+    3. ArrayEeg saves to NPZ format
+    4. NPZ files can be loaded as OnDiskArrayEeg
+    5. Data roundtrip preserves EEG values within tolerance
+    """
+
+    def action(ds):
+      ds.load_to_mem()
+      self.assertGreater(len(ds), 0)
+
+      # Test on first trial
+      original_trial = ds[0]
+
+      # 1. Convert to ArrayEeg
+      array_trial = trial_to_arrayeeg(original_trial)
+
+      # 2. Verify type changed
+      self.assertIsInstance(array_trial.eeg_data, ArrayEeg)
+      self.assertIsInstance(original_trial.eeg_data, RawEeg)
+
+      # 3. Verify metadata preserved
+      self.assertEqual(array_trial.dataset, original_trial.dataset)
+      self.assertEqual(array_trial.subject, original_trial.subject)
+      self.assertEqual(array_trial.trial_id, original_trial.trial_id)
+
+      # 4. Verify EEG data properties
+      orig_raw = original_trial.eeg_data.raw_eeg
+      array_eeg = array_trial.eeg_data
+
+      self.assertEqual(array_eeg.sfreq, orig_raw.info["sfreq"])
+      self.assertEqual(len(array_eeg.ch_names), len(orig_raw.ch_names))
+      self.assertEqual(array_eeg.data.shape[0], len(orig_raw.ch_names))
+      self.assertEqual(array_eeg.data.shape[1], orig_raw.n_times)
+
+      # 5. Verify data values match within tolerance
+      orig_data = orig_raw.get_data()
+      self.assertTrue(
+        np.allclose(array_eeg.data, orig_data, rtol=1e-5, atol=1e-7),
+        "ArrayEeg data should match original RawEeg data",
+      )
+
+      # 6. Test save/load roundtrip
+      with tempfile.TemporaryDirectory() as temp_dir:
+        npz_path = Path(temp_dir) / "test_eeg.npz"
+
+        # Save as NPZ
+        array_eeg.save(npz_path)
+        self.assertTrue(npz_path.exists())
+        self.assertEqual(npz_path.suffix, ".npz")
+
+        # Load as OnDiskArrayEeg
+        ondisk_array = OnDiskArrayEeg(filepath=npz_path)
+
+        # Convert back to RawEeg
+        reloaded_raw = ondisk_array.get_eeg()
+        self.assertIsInstance(reloaded_raw, RawEeg)
+
+        # Verify reloaded data matches
+        reloaded_data = reloaded_raw.raw_eeg.get_data()
+        self.assertTrue(
+          np.allclose(reloaded_data, orig_data, rtol=1e-5, atol=1e-7),
+          "Reloaded data should match original",
+        )
+        self.assertEqual(reloaded_raw.raw_eeg.info["sfreq"], orig_raw.info["sfreq"])
+        self.assertEqual(len(reloaded_raw.raw_eeg.ch_names), len(orig_raw.ch_names))
+
+    self._copy_and_load_combined_dataset(action)
+
+  # 14. Test dataset save/load with ArrayEeg
+  def test_dataset_save_with_arrayeeg(self):
+    """Test saving and loading a dataset with ArrayEeg trials.
+
+    This test verifies:
+    1. MappedDataset with trial_to_arrayeeg works correctly
+    2. Dataset.save() handles ArrayEeg (saves as .npz)
+    3. Dataset.load_ondisk() correctly detects and loads .npz files
+    4. Loaded dataset has OnDiskArrayEeg types
+    5. Data integrity is preserved through save/load cycle
+    """
+
+    def action(ds):
+      ds.load_to_mem()
+
+      # Convert all trials to ArrayEeg
+      array_ds = MappedDataset(ds, trial_to_arrayeeg)
+
+      # Verify conversion worked
+      self.assertGreater(len(array_ds), 0)
+      first_trial = array_ds[0]
+      self.assertIsInstance(first_trial.eeg_data, ArrayEeg)
+
+      # Save the array dataset
+      with tempfile.TemporaryDirectory() as temp_dir:
+        save_path = Path(temp_dir) / "array_dataset"
+        array_ds.save(save_path)
+
+        # Verify NPZ files were created (not EDF)
+        eeg_dir = save_path / "eeg"
+        npz_files = list(eeg_dir.rglob("*.npz"))
+        edf_files = list(eeg_dir.rglob("*.edf"))
+
+        self.assertGreater(len(npz_files), 0, "Should have NPZ files")
+        self.assertEqual(len(edf_files), 0, "Should not have EDF files")
+
+        # Load the dataset back
+        loaded_ds = EEGMusicDataset.load_ondisk(save_path)
+
+        # Verify loaded dataset properties
+        self.assertEqual(len(loaded_ds), len(array_ds))
+
+        # Check first trial
+        loaded_trial = loaded_ds[0]
+        self.assertIsInstance(loaded_trial.eeg_data, OnDiskArrayEeg)
+
+        # Verify data integrity
+        original_trial = array_ds[0]
+        original_array = cast(ArrayEeg, original_trial.eeg_data)
+        original_data = original_array.data
+
+        loaded_raw = loaded_trial.eeg_data.get_eeg()
+        loaded_data = loaded_raw.raw_eeg.get_data()
+
+        self.assertTrue(
+          np.allclose(loaded_data, original_data, rtol=1e-5, atol=1e-7),
+          "Loaded data should match original ArrayEeg data",
+        )
+
+        # Verify metadata preserved
+        self.assertEqual(loaded_trial.dataset, original_trial.dataset)
+        self.assertEqual(loaded_trial.subject, original_trial.subject)
+        self.assertEqual(loaded_trial.trial_id, original_trial.trial_id)
+
+    self._copy_and_load_combined_dataset(action)
+
+  # 15. Test mixed EDF and NPZ dataset loading
+  def test_mixed_edf_npz_dataset(self):
+    """Test loading a dataset with both EDF and NPZ files.
+
+    This test verifies:
+    1. Can save dataset with mix of RawEeg (EDF) and ArrayEeg (NPZ)
+    2. load_ondisk() correctly identifies format by extension
+    3. Both types load and work correctly in same dataset
+    4. No interference between different formats
+    """
+
+    def action(ds):
+      ds.load_to_mem()
+      self.assertGreater(len(ds), 2, "Need at least 3 trials for mixed test")
+
+      with tempfile.TemporaryDirectory() as temp_dir:
+        # Create a dataset with mixed types:
+        # - First trial: keep as RawEeg (will save as EDF)
+        # - Second trial: convert to ArrayEeg (will save as NPZ)
+        # - Rest: keep as RawEeg
+
+        def selective_convert(trial):
+          # Convert only second trial (index 1)
+          if trial.trial_id == ds[1].trial_id:
+            return trial_to_arrayeeg(trial)
+          return trial
+
+        mixed_ds = MappedDataset(ds, selective_convert)
+
+        # Verify we have mixed types
+        trial_0 = mixed_ds[0]
+        trial_1 = mixed_ds[1]
+        trial_2 = mixed_ds[2]
+
+        self.assertIsInstance(trial_0.eeg_data, RawEeg)
+        self.assertIsInstance(trial_1.eeg_data, ArrayEeg)
+        self.assertIsInstance(trial_2.eeg_data, RawEeg)
+
+        # Save mixed dataset
+        save_path = Path(temp_dir) / "mixed_dataset"
+        mixed_ds.save(save_path)
+
+        # Verify both file types exist
+        eeg_dir = save_path / "eeg"
+        npz_files = list(eeg_dir.rglob("*.npz"))
+        edf_files = list(eeg_dir.rglob("*.edf"))
+
+        self.assertGreaterEqual(len(npz_files), 1, "Should have at least 1 NPZ file")
+        self.assertGreaterEqual(len(edf_files), 2, "Should have at least 2 EDF files")
+
+        # Load and verify
+        loaded_ds = EEGMusicDataset.load_ondisk(save_path)
+        self.assertEqual(len(loaded_ds), len(mixed_ds))
+
+        # Check types after loading
+        loaded_0 = loaded_ds[0]
+        loaded_1 = loaded_ds[1]
+        loaded_2 = loaded_ds[2]
+
+        self.assertIsInstance(loaded_0.eeg_data, OnDiskEeg)
+        self.assertIsInstance(loaded_1.eeg_data, OnDiskArrayEeg)
+        self.assertIsInstance(loaded_2.eeg_data, OnDiskEeg)
+
+        # Verify data loads correctly from both formats
+        for i, (orig, loaded) in enumerate(
+          [(trial_0, loaded_0), (trial_1, loaded_1), (trial_2, loaded_2)]
+        ):
+          orig_data = orig.eeg_data.get_eeg().raw_eeg.get_data()
+          loaded_data = loaded.eeg_data.get_eeg().raw_eeg.get_data()
+
+          self.assertTrue(
+            np.allclose(loaded_data, orig_data, rtol=1e-5, atol=1e-7),
+            f"Trial {i} data should match after mixed format save/load",
+          )
+
+    self._copy_and_load_combined_dataset(action)
+
+  # 16. Test ArrayEeg with data processing functions
+  def test_arrayeeg_with_prepare_trial(self):
+    """Test that ArrayEeg works with prepare_trial and other processing functions.
+
+    This test verifies:
+    1. prepare_trial() works with ArrayEeg input (via get_eeg())
+    2. rereference_trial() works with ArrayEeg input
+    3. Processing functions create expected output (RawEeg)
+    4. Can convert back to ArrayEeg after processing
+    """
+
+    def action(ds):
+      ds.load_to_mem()
+
+      # Convert to ArrayEeg
+      array_ds = MappedDataset(ds, trial_to_arrayeeg)
+      trial = array_ds[0]
+
+      self.assertIsInstance(trial.eeg_data, ArrayEeg)
+
+      # Test prepare_trial with ArrayEeg
+      prepared = prepare_trial(
+        trial,
+        eeg_resample=128,
+        eeg_l_freq=1.0,
+        eeg_h_freq=40.0,
+      )
+
+      # prepare_trial returns RawEeg
+      self.assertIsInstance(prepared.eeg_data, RawEeg)
+      self.assertEqual(prepared.eeg_data.raw_eeg.info["sfreq"], 128.0)
+
+      # Test rereference_trial with ArrayEeg
+      rereferenced = rereference_trial(trial)
+
+      # rereference_trial also returns RawEeg
+      self.assertIsInstance(rereferenced.eeg_data, RawEeg)
+
+      # Convert processed result back to ArrayEeg
+      back_to_array = trial_to_arrayeeg(prepared)
+      self.assertIsInstance(back_to_array.eeg_data, ArrayEeg)
+      self.assertEqual(back_to_array.eeg_data.sfreq, 128.0)
+
+      # Test save after conversion cycle
+      with tempfile.TemporaryDirectory() as temp_dir:
+        npz_path = Path(temp_dir) / "processed.npz"
+        back_to_array.eeg_data.save(npz_path)
+        self.assertTrue(npz_path.exists())
+
+        # Verify reload
+        reloaded = OnDiskArrayEeg(npz_path).get_eeg()
+        self.assertAlmostEqual(reloaded.raw_eeg.info["sfreq"], 128.0, places=1)
+
+    self._copy_and_load_combined_dataset(action)
 
 
 if __name__ == "__main__":
