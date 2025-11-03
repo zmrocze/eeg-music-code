@@ -4,11 +4,16 @@ from typing import Union, Dict, Any
 import matplotlib.figure as mfig
 from dataclasses import dataclass
 
+import numpy as np
+import matplotlib.pyplot as plt
+
 from .data import (
   TrialData,
   RawEeg,
   WavRAW,
   MelRaw,
+  NoteOnsets,
+  ArrayEeg,
   melspectrogram_figure,
   mkplot_melspectrogram,
 )
@@ -71,3 +76,65 @@ def plot_trial_data(trial_data: TrialData[RawEeg, Union[WavRAW, MelRaw]]) -> Tri
   return TrialPlots(
     eeg_plot=eeg_fig, spectrogram_plot=spectrogram_fig, metadata=metadata
   )
+
+
+def plot_band_power_with_onsets(
+  trial_data: TrialData[ArrayEeg, NoteOnsets], title: str = "Band Power Analysis"
+) -> mfig.Figure:
+  """
+  Create a 2D image plot of band power data from EEG with note onsets overlaid as dotted lines.
+
+  Args:
+      trial_data: TrialData containing ArrayEeg (band power data) and NoteOnsets
+      title: Title for the plot
+
+  Returns:
+      Matplotlib figure containing the band power plot with onset lines
+  """
+  # Extract EEG data
+  eeg = trial_data.eeg_data
+  band_power_data = eeg.data  # Shape: (channels * bands, time windows)
+  sfreq = eeg.sfreq  # Effective sampling rate after windowing
+  channel_names = eeg.ch_names
+
+  # Get note onsets
+  onsets = trial_data.music_data.get_music().onset_times
+
+  # Create figure and axis
+  fig, ax = plt.subplots(figsize=(12, 8))
+
+  # Create time vector for x-axis (in seconds)
+  n_windows = band_power_data.shape[1]
+  duration = n_windows / sfreq
+
+  # Plot band power as 2D image
+  im = ax.imshow(
+    band_power_data,
+    aspect="auto",
+    extent=(0.0, float(duration), float(len(channel_names) - 0.5), -0.5),
+    cmap="viridis",
+    interpolation="nearest",
+  )
+
+  # Add colorbar with value range
+  cbar = plt.colorbar(im)
+  cbar.set_label("Power (a.u.)")
+
+  # Set y-axis ticks to channel names
+  ax.set_yticks(np.arange(len(channel_names)))
+  ax.set_yticklabels(channel_names)
+
+  # Set axis labels and title
+  ax.set_xlabel("Time (s)")
+  ax.set_ylabel("Channel / Band")
+  ax.set_title(title if title else f"Band Power - {trial_data.trial_id}")
+
+  # Overlay note onsets as dotted lines
+  for onset_time in onsets:
+    if 0 <= onset_time <= duration:
+      ax.axvline(x=onset_time, color="white", linestyle=":", alpha=0.5, linewidth=1)
+
+  # Adjust layout to prevent label cutoff
+  plt.tight_layout()
+
+  return fig
