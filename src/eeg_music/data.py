@@ -545,9 +545,9 @@ class OnDiskArrayEeg(EegData):
     shutil.copy2(self.filepath, filepath)
 
 
-# Type variables for generic Trial class
-M = TypeVar("M", bound=MusicData)
-E = TypeVar("E", bound=EegData)
+# Type variables for generic Trial class (covariant)
+M = TypeVar("M", bound=MusicData, covariant=True)
+E = TypeVar("E", bound=EegData, covariant=True)
 
 
 @dataclass(frozen=True)

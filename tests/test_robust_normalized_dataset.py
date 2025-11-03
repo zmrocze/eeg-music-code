@@ -33,7 +33,7 @@ def test_robust_normalized_dataset_basic():
       "session": "sess1",
       "run": "run1",
       "trial_id": "t1",
-      "music_filename": "music.wav",
+      "music_filename": MusicFilename("music.wav"),
       "eeg_data": eeg1,
     },
     ignore_index=True,
@@ -45,14 +45,14 @@ def test_robust_normalized_dataset_basic():
       "session": "sess1",
       "run": "run1",
       "trial_id": "t2",
-      "music_filename": "music.wav",
+      "music_filename": MusicFilename("music.wav"),
       "eeg_data": eeg2,
     },
     ignore_index=True,
   )
-  ds.music_collection[
-    MusicRef(filename=MusicFilename(filename="music.wav"), dataset="test")
-  ] = music
+  ds.music_collection[MusicRef(filename=MusicFilename("music.wav"), dataset="test")] = (
+    music
+  )
 
   # Create normalized dataset
   norm_ds = RobustNormalizedDataset(ds)
@@ -95,14 +95,14 @@ def test_robust_normalized_dataset_properties():
       "session": "sess1",
       "run": "run1",
       "trial_id": "t1",
-      "music_filename": "music.wav",
+      "music_filename": MusicFilename("music.wav"),
       "eeg_data": eeg,
     },
     ignore_index=True,
   )
-  ds.music_collection[
-    MusicRef(filename=MusicFilename(filename="music.wav"), dataset="test")
-  ] = music
+  ds.music_collection[MusicRef(filename=MusicFilename("music.wav"), dataset="test")] = (
+    music
+  )
 
   norm_ds = RobustNormalizedDataset(ds)
 
@@ -113,7 +113,7 @@ def test_robust_normalized_dataset_properties():
   # Check music_collection property
   assert len(norm_ds.music_collection) == 1
   assert (
-    MusicRef(filename=MusicFilename(filename="music.wav"), dataset="test")
+    MusicRef(filename=MusicFilename("music.wav"), dataset="test")
     in norm_ds.music_collection
   )
 
@@ -128,7 +128,7 @@ def test_robust_normalized_dataset_error_on_wrong_type():
   # Create RawEeg (not ArrayEeg)
   info = mne.create_info(ch_names=["ch0", "ch1"], sfreq=100.0, ch_types="eeg")
   raw = mne.io.RawArray(data=np.random.randn(2, 100), info=info, verbose="error")
-  eeg = RawEeg(raw_eeg=raw)
+  raw_eeg = RawEeg(raw_eeg=raw)
 
   music = NoteOnsets(onset_times=np.array([]), sample_rate=44100, duration_seconds=1.0)
 
@@ -139,14 +139,14 @@ def test_robust_normalized_dataset_error_on_wrong_type():
       "session": "sess1",
       "run": "run1",
       "trial_id": "t1",
-      "music_filename": "music.wav",
-      "eeg_data": eeg,
+      "music_filename": MusicFilename("music.wav"),
+      "eeg_data": raw_eeg,
     },
     ignore_index=True,
   )
-  ds.music_collection[
-    MusicRef(filename=MusicFilename(filename="music.wav"), dataset="test")
-  ] = music
+  ds.music_collection[MusicRef(filename=MusicFilename("music.wav"), dataset="test")] = (
+    music
+  )
 
   # Should raise TypeError during initialization
   with pytest.raises(TypeError, match="Expected ArrayEeg or OnDiskArrayEeg"):
