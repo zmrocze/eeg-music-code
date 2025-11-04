@@ -27,6 +27,7 @@ from .data import (
   ArrayStratifiedSamplingDataset,
   RobustNormalizedDataset,
   rereference_trial,
+  trial_to_arrayeeg,
 )
 from .dataloader import TrialWiseSplit, create_collate_fn
 
@@ -307,7 +308,9 @@ class EmotionEEGNetTraining(NoteOnsetsTraining):
     # Define custom dataset preprocessing pipeline
     def after_loaded_ds(ds, trial_length_secs=Fraction(4, 1)):
       # Apply rereferencing
-      dereferenced = MappedDataset(ds, rereference_trial)
+      dereferenced = MappedDataset(
+        ds, lambda x: trial_to_arrayeeg(rereference_trial(x))
+      )
       # Apply robust normalization
       normalized = RobustNormalizedDataset(dereferenced)
       # Apply stratified sampling (last, after preprocessing)
