@@ -340,6 +340,9 @@ class EmotionEEGNetTraining(NoteOnsetsTraining):
       collate_fn=create_collate_fn(
         include_info=include_info,
         music_batch_fn=lambda x: x,  # Keep music data as-is
+        eeg_batch_fn=lambda x: torch.stack(
+          [torch.from_numpy(a.get_array().data) for a in x]  # pyright: ignore[reportAttributeAccessIssue]
+        ),
       ),
       include_mapper=self.config.model_config.use_subject_specific,
       split_type=self.config.ds_split_type,
