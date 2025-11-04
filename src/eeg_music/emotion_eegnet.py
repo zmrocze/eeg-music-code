@@ -24,7 +24,7 @@ from .training import NoteOnsetsTraining
 from .subject_specific import SubjectDatasetMapper
 from .data import (
   MappedDataset,
-  StratifiedSamplingDataset,
+  ArrayStratifiedSamplingDataset,
   RobustNormalizedDataset,
   rereference_trial,
 )
@@ -311,7 +311,7 @@ class EmotionEEGNetTraining(NoteOnsetsTraining):
       # Apply robust normalization
       normalized = RobustNormalizedDataset(dereferenced)
       # Apply stratified sampling (last, after preprocessing)
-      stratified = StratifiedSamplingDataset(
+      stratified = ArrayStratifiedSamplingDataset(
         normalized,
         n_strata=10,
         trial_length_secs=trial_length_secs,

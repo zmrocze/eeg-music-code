@@ -1538,6 +1538,86 @@ class StratifiedSamplingDataset(EEGMusicDataset):
     return trial
 
 
+class ArrayStratifiedSamplingDataset(EEGMusicDataset):
+  """
+  Wrapper over ds.
+
+  Similar to StratifiedSamplingDataset but:
+  - Expects EEG to be ArrayEeg (numpy array based)
+  - Passes music data as-is without modifications
+  - Only applies stratified sampling to EEG
+  """
+
+  def __init__(
+    self,
+    base_dataset: EEGMusicDataset,
+    n_strata: int,
+    trial_length_secs: Fraction,
+  ):
+    self.ds = base_dataset
+    self.n_strata = n_strata
+    self.trial_length_secs: Fraction = trial_length_secs
+
+  @property
+  def df(self) -> pd.DataFrame:
+    return self.ds.df
+
+  @df.setter
+  def df(self, value: pd.DataFrame) -> None:
+    self.ds.df = value
+
+  @property
+  def music_collection(self) -> Dict[MusicRef, MusicData]:  # type: ignore[reportIncompatibleVariableOverride]
+    return self.ds.music_collection
+
+  @music_collection.setter
+  def music_collection(self, value: Dict[MusicRef, MusicData]):  # type: ignore[reportIncompatibleVariableOverride]
+    self.ds.music_collection = value
+
+  def __len__(self) -> int:
+    return len(self.ds) * self.n_strata
+
+  def __getitem__(self, idx: int) -> TrialData[ArrayEeg, MusicData]:
+    """
+    Return a portion of a trial with EEG trimmed using stratified sampling.
+    Music data is passed through unchanged.
+    """
+    trial_index = idx // self.n_strata
+    trial: TrialData[EegData, MusicData] = self.ds.__getitem__(trial_index)
+    stratum_index = idx % self.n_strata
+
+    # Get ArrayEeg
+    array_eeg = trial.eeg_data.get_array()  # type: ignore[reportAttributeAccessIssue]
+
+    e_len = array_eeg.length_seconds()
+    sfreq = array_eeg.sfreq
+
+    # Calculate stratified sampling bounds
+    n_starts = int((e_len - self.trial_length_secs) * sfreq)
+    new_length_samples = int_or_err(self.trial_length_secs * Fraction(sfreq))
+    n_starts_exact = array_eeg.data.shape[1] - new_length_samples + 1
+
+    s_start = (n_starts * stratum_index) // self.n_strata
+    s_end = (n_starts * (stratum_index + 1)) // self.n_strata
+    random_start = np.random.randint(s_start, min(s_end, n_starts_exact))
+
+    # Trim EEG data
+    trimmed_data = array_eeg.data[:, random_start : random_start + new_length_samples]
+    trimmed_eeg = ArrayEeg(data=trimmed_data, ch_names=array_eeg.ch_names, sfreq=sfreq)
+
+    # Return trial with trimmed EEG and unchanged music
+    return TrialData(
+      dataset=trial.dataset,
+      subject=trial.subject,
+      session=trial.session,
+      run=trial.run,
+      trial_id=trial.trial_id,
+      music_filename=trial.music_filename,
+      eeg_data=trimmed_eeg,
+      music_data=trial.music_data,  # Pass through unchanged
+    )
+
+
 class RobustNormalizedDataset(EEGMusicDataset):
   """
   Wrapper that applies per-channel robust normalization to EEG data.
