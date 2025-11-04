@@ -94,7 +94,6 @@ class EmotionEEGNetModelConfig:
   lr_config: float | LRCosine = 1e-4
   optimizer: UseAdamW | UseSGD = field(default_factory=UseAdamW)
   use_subject_specific: bool = False
-  subject_specific_trainable: bool = False
 
 
 class EmotionEEGNetLightning(LightningModule):
@@ -384,7 +383,6 @@ class EmotionEEGNetTraining(NoteOnsetsTraining):
       # Training
       "lr_config": str(self.config.model_config.lr_config),
       "use_subject_specific": self.config.model_config.use_subject_specific,
-      "subject_specific_trainable": self.config.model_config.subject_specific_trainable,
       # Dataloader params
       "dataloader_train_size": len(self.dataloaders["train"]),
       "dataloader_val_size": len(self.dataloaders["val"]),
