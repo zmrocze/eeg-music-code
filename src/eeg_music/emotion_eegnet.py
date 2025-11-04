@@ -20,8 +20,14 @@ from .eegnet import (
   EEGNetWrapper,
 )
 from .eegpt import UseAdamW, UseSGD, mk_optimizer_and_lr_scheduler, LRCosine
-from .training import NoteOnsetsTraining
+from .training import NoteOnsetsTraining, OnExceptionCheckpoint
 from .subject_specific import SubjectDatasetMapper
+from lightning.pytorch.callbacks import (
+  ModelCheckpoint,
+  LearningRateMonitor,
+  RichProgressBar,
+)
+from lightning.pytorch.callbacks.lr_finder import LearningRateFinder
 from .data import (
   MappedDataset,
   ArrayStratifiedSamplingDataset,
@@ -375,6 +381,48 @@ class EmotionEEGNetTraining(NoteOnsetsTraining):
         self.config.model_config,
         subject_mapper=mapper,
       )
+
+  def create_callbacks(self):
+    """Create callbacks for emotion classification training.
+
+    Overrides parent to monitor val_accuracy instead of val_f1_score.
+    """
+    save_on_exc = OnExceptionCheckpoint(
+      f"{self.config.save_path}/exc_save",
+    )
+
+    ckpt_callback_accuracy = ModelCheckpoint(
+      every_n_epochs=self.config.save_model_per_epochs,
+      dirpath=self.config.save_path,
+      save_top_k=1,
+      monitor="val_accuracy",
+      mode="max",
+      filename="best-acc-{epoch:02d}-{val_accuracy:.3f}",
+    )
+
+    ckpt_callback_loss = ModelCheckpoint(
+      every_n_epochs=self.config.save_model_per_epochs,
+      dirpath=self.config.save_path,
+      save_top_k=1,
+      monitor="val_loss",
+      mode="min",
+      filename="best-loss-{epoch:02d}-{val_loss:.3f}",
+      save_last=True,
+    )
+
+    optional_lr_finder = (
+      [LearningRateFinder(min_lr=1e-08, max_lr=1, num_training_steps=100)]
+      if self.config.use_learning_rate_finder
+      else []
+    )
+
+    self.callbacks = [
+      ckpt_callback_accuracy,
+      ckpt_callback_loss,
+      RichProgressBar(),
+      save_on_exc,
+      LearningRateMonitor(logging_interval="step"),
+    ] + optional_lr_finder
 
   def log_hyperparameters(self):
     """Log emotion classification hyperparameters to wandb."""
