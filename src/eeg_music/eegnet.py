@@ -143,6 +143,7 @@ class EEGNetWrapper(nn.Module):
     model_config: Optional[
       "EEGNetConfig | FBCNetConfig | TSCeptionConfig | ATCNetConfig"
     ] = None,
+    num_classes: int = 1,
     subject_specific_mapper: Optional[SubjectDatasetMapper] = None,
     **model_kwargs,
   ):
@@ -152,7 +153,7 @@ class EEGNetWrapper(nn.Module):
     self.num_channels = num_channels
     self.eeg_sample_rate = eeg_sample_rate
     self.model_config = model_config or EEGNetConfig()  # Default to EEGNet
-    self.num_classes = 1  # Binary classification: single output
+    self.num_classes = num_classes
 
     # Optional subject-specific preprocessing
     self.subject_specific_mapper = subject_specific_mapper
@@ -322,6 +323,7 @@ class NoteOnsetModelConfig:
       chunk_width: Total width of input chunk in samples
       num_channels: Number of EEG channels
       eeg_sample_rate: EEG sampling rate in Hz
+      num_classes: Number of output classes (1 for binary, >1 for multi-class)
       window_start: Start sample index of target window (constant for all samples)
       window_end: End sample index of target window (constant for all samples)
       lr_config: Learning rate config - either a float or LRCosine scheduler config
@@ -336,6 +338,7 @@ class NoteOnsetModelConfig:
   chunk_width: int = 1024
   num_channels: int = 28
   eeg_sample_rate: int = 256
+  num_classes: int = 1
   window_start: int = 0
   window_end: int = 256
   lr_config: float | LRCosine = 1e-4
@@ -402,6 +405,7 @@ class EEGNetLightning(LightningModule):
       num_channels=config.num_channels,
       eeg_sample_rate=config.eeg_sample_rate,
       model_config=config.model_config,
+      num_classes=config.num_classes,
       subject_specific_mapper=subject_mapper,
       **model_kwargs,
     )
