@@ -156,6 +156,7 @@ class EmotionEEGNetLightning(LightningModule):
     """
     eeg = batch["eeg"]
     emotion_codes = batch["info"]["emotion"]  # List of emotion codes (1-9 or None)
+    batch_size = eeg.shape[0]
 
     # Convert to class indices (0-8) for CrossEntropyLoss. Subtract 1 to map 1-9 to 0-8
     targets = torch.tensor(
@@ -191,7 +192,14 @@ class EmotionEEGNetLightning(LightningModule):
       self.test_metrics.update(logits.detach(), targets)
 
     # Log loss
-    self.log(f"{stage}_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+    self.log(
+      f"{stage}_loss",
+      loss,
+      on_step=True,
+      on_epoch=True,
+      prog_bar=True,
+      batch_size=batch_size,
+    )
 
     return loss
 
