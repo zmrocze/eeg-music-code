@@ -131,6 +131,7 @@ class NoteOnsetsTrainingConfig:
   data_path: Path = Path("./datasets/bcmi_preprocessed/bcmi_combined_noteonsets_28ch")
   data_loader_num_workers: int = 4
   prefetch_factor: int = 2
+  pin_memory: bool = True
   batch_size: int = 32
 
   # Training settings

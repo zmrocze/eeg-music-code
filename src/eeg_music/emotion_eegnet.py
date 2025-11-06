@@ -279,6 +279,7 @@ class EmotionEEGNetTrainingConfig:
   data_path: Path = Path("./datasets/bcmi_preprocessed/bcmi_combined_prepared_mel_28ch")
   data_loader_num_workers: int = 2
   prefetch_factor: int = 2
+  pin_memory: bool = True
   batch_size: int = 32
   num_epochs: int = 100
   save_model_per_epochs: int = 5

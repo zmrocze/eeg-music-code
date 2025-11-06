@@ -103,12 +103,15 @@ def load_and_create_dataloaders(
   if collate_fn is None:
     collate_fn = mel_create_collate_fn(include_info=include_info)
 
+  pin_memory = getattr(config, "pin_memory", True)
+
   train_dl = create_dataloader(
     dereferenced,
     is_training=True,
     batch_size=config.batch_size,
     num_workers=config.data_loader_num_workers,
     prefetch_factor=config.prefetch_factor,
+    pin_memory=pin_memory,
     collate_fn=collate_fn,
   )
   val_dl = create_dataloader(
@@ -117,6 +120,7 @@ def load_and_create_dataloaders(
     batch_size=config.batch_size,
     num_workers=config.data_loader_num_workers,
     prefetch_factor=config.prefetch_factor,
+    pin_memory=pin_memory,
     collate_fn=collate_fn,
   )
   test_dl = create_dataloader(
@@ -125,6 +129,7 @@ def load_and_create_dataloaders(
     batch_size=config.batch_size,
     num_workers=config.data_loader_num_workers,
     prefetch_factor=config.prefetch_factor,
+    pin_memory=pin_memory,
     collate_fn=collate_fn,
   )
   result: Dict[str, Any] = {"train": train_dl, "val": val_dl, "test": test_dl}
