@@ -7,7 +7,7 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from dataclasses import dataclass
 from typing import Union, Optional, List
 
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, StepLR
 
 
 class AccuracyCalc:
@@ -305,6 +305,13 @@ class LRCosine:
 
 
 @dataclass
+class LRStepLR:
+  initial_lr: float
+  step_size: int
+  gamma: float = 0.1
+
+
+@dataclass
 class EegptConfig:
   chpt_path: Path
   trainable: Optional[
@@ -313,7 +320,7 @@ class EegptConfig:
   requiring_grad: Optional[
     List[str]
   ]  # None = all require grad; list can contain: "chan_conv", "linear", "head", "reconstructor", "predictor", "target_encoder"
-  lr_config: Union[float, LRCosine] = 1e-4
+  lr_config: Union[float, LRCosine, LRStepLR] = 1e-4
   use_chan_conv: bool = True
   # batch_size: int = 8
   # num_workers: int = 4
@@ -332,7 +339,7 @@ class UseSGD:
 
 def mk_optimizer_and_lr_scheduler(
   trainable_params,
-  lr_config: float | LRCosine,
+  lr_config: float | LRCosine | LRStepLR,
   optimizer: UseAdamW | UseSGD = UseAdamW(),
 ):
   """
@@ -340,7 +347,7 @@ def mk_optimizer_and_lr_scheduler(
 
   Args:
     trainable_params: Iterator of parameters to optimize
-    lr_config: Learning rate config - either a float or LRCosine scheduler config
+    lr_config: Learning rate config - either a float, LRCosine, or LRStepLR scheduler config
   """
 
   def mk_optimizer(lr):
@@ -361,6 +368,14 @@ def mk_optimizer_and_lr_scheduler(
       T_mult=lr_config.T_mult,
       eta_min=lr_config.eta_min,
       last_epoch=lr_config.last_epoch,
+    )
+    return opt, lr_scheduler
+  elif isinstance(lr_config, LRStepLR):
+    opt = mk_optimizer(lr_config.initial_lr)
+    lr_scheduler = StepLR(
+      opt,
+      step_size=lr_config.step_size,
+      gamma=lr_config.gamma,
     )
     return opt, lr_scheduler
   else:
