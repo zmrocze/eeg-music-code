@@ -28,14 +28,11 @@ from lightning.pytorch.callbacks import (
   RichProgressBar,
 )
 from lightning.pytorch.callbacks.lr_finder import LearningRateFinder
-from .data import (
-  MappedDataset,
-  ArrayStratifiedSamplingDataset,
-  RobustNormalizedDataset,
-  rereference_trial,
-  trial_to_arrayeeg,
+from .dataloader import (
+  TrialWiseSplit,
+  create_collate_fn,
+  create_dataloaders_but_with_normalization,
 )
-from .dataloader import TrialWiseSplit, create_collate_fn
 
 
 class MultiClassAccuracyCalc:
@@ -318,34 +315,12 @@ class EmotionEEGNetTraining(NoteOnsetsTraining):
 
   def create_dataloaders(self):
     """Create dataloaders with rereference_trial, robust normalization, and stratified sampling."""
-    from .dataloader import load_and_create_dataloaders
 
-    # Define custom dataset preprocessing pipeline
-    def after_loaded_ds(ds, trial_length_secs=Fraction(4, 1)):
-      # Apply rereferencing
-      dereferenced = MappedDataset(
-        ds, lambda x: trial_to_arrayeeg(rereference_trial(x))
-      )
-      # Apply robust normalization
-      normalized = RobustNormalizedDataset(dereferenced)
-      # Apply stratified sampling (last, after preprocessing)
-      stratified = ArrayStratifiedSamplingDataset(
-        normalized,
-        n_strata=10,
-        trial_length_secs=trial_length_secs,
-      )
-      return stratified
-
-    # Enable include_info when using subject-specific preprocessing (need dataset+subject)
-    include_info = (
-      self.config.include_info or self.config.model_config.use_subject_specific
-    )
-
-    self.dataloaders = load_and_create_dataloaders(
+    self.dataloaders = create_dataloaders_but_with_normalization(
       self.config.data_path,
       self.config,
       collate_fn=create_collate_fn(
-        include_info=include_info,
+        include_info=self.config.include_info,
         music_batch_fn=lambda x: x,  # Keep music data as-is
         eeg_batch_fn=lambda x: torch.stack(
           [torch.from_numpy(a.get_array().data) for a in x]  # pyright: ignore[reportAttributeAccessIssue]
@@ -353,7 +328,6 @@ class EmotionEEGNetTraining(NoteOnsetsTraining):
       ),
       include_mapper=self.config.model_config.use_subject_specific,
       split_type=self.config.ds_split_type,
-      after_loaded_ds=after_loaded_ds,
     )
 
   def create_model(self):

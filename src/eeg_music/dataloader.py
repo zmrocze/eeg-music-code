@@ -5,17 +5,21 @@ from typing import List, Dict, Callable, Any, Optional, Sequence
 from dataclasses import dataclass
 from .subject_specific import SubjectDatasetMapper
 from .data import (
+  ArrayStratifiedSamplingDataset,
   EEGMusicDataset,
   MappedDataset,
   MelRaw,
   MusicData,
   NoteOnsets,
   RepeatedDataset,
+  RobustNormalizationStats,
+  RobustNormalizedDataset,
   StratifiedSamplingDataset,
   TrialData,
   EegData,
   WavRAW,
   rereference_trial,
+  trial_to_arrayeeg,
 )
 from .emotion_utils import parse_music_emotion
 from pathlib import Path
@@ -85,6 +89,133 @@ def load_and_create_dataloaders(
   dereferenced = after_loaded_ds(train_ds, trial_length_secs=trial_length_secs)
   dereferenced_val = after_loaded_ds(val_ds, trial_length_secs=trial_length_secs)
   dereferenced_tst = after_loaded_ds(test_ds, trial_length_secs=trial_length_secs)
+  if config.ds_use_test_for_val:  # for when p_val=0
+    dereferenced_val = dereferenced_tst
+
+  ds_train_repeated_mul = getattr(config, "ds_train_repeated_mul", 1)
+  ds_val_repeated_mul = getattr(config, "ds_val_repeated_mul", 1)
+  ds_test_repeated_mul = getattr(config, "ds_test_repeated_mul", 1)
+
+  if ds_train_repeated_mul > 1:
+    dereferenced = RepeatedDataset(dereferenced, ds_train_repeated_mul)
+  if ds_val_repeated_mul > 1:
+    dereferenced_val = RepeatedDataset(dereferenced_val, ds_val_repeated_mul)
+  if ds_test_repeated_mul > 1:
+    dereferenced_tst = RepeatedDataset(dereferenced_tst, ds_test_repeated_mul)
+
+  include_info = getattr(config, "include_info", False)
+  if collate_fn is None:
+    collate_fn = mel_create_collate_fn(include_info=include_info)
+
+  pin_memory = getattr(config, "pin_memory", True)
+
+  train_dl = create_dataloader(
+    dereferenced,
+    is_training=True,
+    batch_size=config.batch_size,
+    num_workers=config.data_loader_num_workers,
+    prefetch_factor=config.prefetch_factor,
+    pin_memory=pin_memory,
+    collate_fn=collate_fn,
+  )
+  val_dl = create_dataloader(
+    dereferenced_val,
+    is_training=False,
+    batch_size=config.batch_size,
+    num_workers=config.data_loader_num_workers,
+    prefetch_factor=config.prefetch_factor,
+    pin_memory=pin_memory,
+    collate_fn=collate_fn,
+  )
+  test_dl = create_dataloader(
+    dereferenced_tst,
+    is_training=False,
+    batch_size=config.batch_size,
+    num_workers=config.data_loader_num_workers,
+    prefetch_factor=config.prefetch_factor,
+    pin_memory=pin_memory,
+    collate_fn=collate_fn,
+  )
+  result: Dict[str, Any] = {"train": train_dl, "val": val_dl, "test": test_dl}
+  if include_mapper and mapper is not None:
+    result["mapper"] = mapper
+  if "num_skipped_trials" in split_result:
+    result["num_skipped_trials"] = split_result["num_skipped_trials"]
+
+  return result
+
+
+def create_dataloaders_but_with_normalization(
+  ds_path: Path,
+  config,
+  collate_fn=None,
+  include_mapper: bool = False,
+  split_type: SubjectWiseSplit | TrialWiseSplit = SubjectWiseSplit(),
+) -> Dict[str, Any]:
+  def after_loaded_ds(ds, trial_length_secs=Fraction(4, 1), pre_calculated_stats=None):
+    # Apply rereferencing
+    dereferenced = MappedDataset(ds, lambda x: trial_to_arrayeeg(rereference_trial(x)))
+    # Apply robust normalization
+    normalized = RobustNormalizedDataset(
+      dereferenced, pre_calculated_stats=pre_calculated_stats
+    )
+    robust_stats = RobustNormalizationStats(
+      p25=normalized.p25,
+      p75=normalized.p75,
+      iqr=normalized.iqr,
+      median=normalized.median,
+    )
+    # Apply stratified sampling (last, after preprocessing)
+    stratified = ArrayStratifiedSamplingDataset(
+      normalized,
+      n_strata=10,
+      trial_length_secs=trial_length_secs,
+    )
+    return stratified, robust_stats
+
+  ds = EEGMusicDataset.load_ondisk(ds_path)
+
+  # Choose split method based on split_type
+  match split_type:
+    case SubjectWiseSplit():
+      split_result = ds.subject_wise_split(
+        p_train=config.ds_p_train,
+        p_val=config.ds_p_val,
+        seed=config.ds_split_seed,
+      )
+    case TrialWiseSplit():
+      split_result = ds.trial_wise_split(
+        p_train=config.ds_p_train,
+        p_val=config.ds_p_val,
+        seed=config.ds_split_seed,
+      )
+
+  train_ds = split_result["train"]
+  val_ds = split_result.get("val", split_result["test"])  # fallback to test if no val
+  test_ds = split_result["test"]
+
+  mapper = None
+  if include_mapper:
+    mapper = SubjectDatasetMapper()
+    for _, row in ds.df[["dataset", "subject"]].drop_duplicates().iterrows():
+      mapper.add_subject(str(row["dataset"]), str(row["subject"]))
+
+  # Get chunk width from config (default to 4 seconds if not specified)
+  trial_length_secs = getattr(config, "ds_chunk_width", Fraction(4, 1))
+
+  dereferenced, normalization_stats = after_loaded_ds(
+    train_ds, trial_length_secs=trial_length_secs, pre_calculated_stats=None
+  )
+  dereferenced_val, _ = after_loaded_ds(
+    val_ds,
+    trial_length_secs=trial_length_secs,
+    pre_calculated_stats=normalization_stats,
+  )
+  dereferenced_tst, _ = after_loaded_ds(
+    test_ds,
+    trial_length_secs=trial_length_secs,
+    pre_calculated_stats=normalization_stats,
+  )
   if config.ds_use_test_for_val:  # for when p_val=0
     dereferenced_val = dereferenced_tst
 

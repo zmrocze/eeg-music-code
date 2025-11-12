@@ -1618,6 +1618,14 @@ class ArrayStratifiedSamplingDataset(EEGMusicDataset):
     )
 
 
+@dataclass
+class RobustNormalizationStats:
+  p25: NDArray[np.float32]
+  p75: NDArray[np.float32]
+  iqr: NDArray[np.float32]
+  median: NDArray[np.float32]
+
+
 class RobustNormalizedDataset(EEGMusicDataset):
   """
   Wrapper that applies per-channel robust normalization to EEG data.
@@ -1627,9 +1635,19 @@ class RobustNormalizedDataset(EEGMusicDataset):
   Applies robust normalization: (x - median) / IQR where IQR = p75 - p25.
   """
 
-  def __init__(self, base_dataset: EEGMusicDataset):
+  def __init__(
+    self,
+    base_dataset: EEGMusicDataset,
+    pre_calculated_stats: Optional[RobustNormalizationStats] = None,
+  ):
     self.ds = base_dataset
-    self._calculate_statistics()
+    if pre_calculated_stats is None:
+      self._calculate_statistics()
+    else:
+      self.p25 = pre_calculated_stats.p25
+      self.p75 = pre_calculated_stats.p75
+      self.iqr = pre_calculated_stats.iqr
+      self.median = pre_calculated_stats.median
 
   def _get_array_eeg(self, eeg_data: EegData) -> ArrayEeg:
     """Get ArrayEeg from EegData, raising TypeError if not supported."""
