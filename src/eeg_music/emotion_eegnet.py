@@ -86,6 +86,7 @@ class EmotionEEGNetModelConfig:
       lr_config: Learning rate config - either a float or LRCosine scheduler config
       optimizer: Optimizer to use
       use_subject_specific: Enable subject-specific linear preprocessing
+      median_num_noteonsets: Median number of note onsets for binary classification (default: 35)
   """
 
   model_config: EEGNetConfig | FBCNetConfig | TSCeptionConfig | ATCNetConfig = field(
@@ -98,6 +99,7 @@ class EmotionEEGNetModelConfig:
   lr_config: float | LRCosine = 1e-4
   optimizer: UseAdamW | UseSGD = field(default_factory=UseAdamW)
   use_subject_specific: bool = False
+  median_num_noteonsets: int = 35
 
 
 class EmotionEEGNetLightning(LightningModule):
@@ -253,6 +255,83 @@ class EmotionEEGNetLightning(LightningModule):
     if lr_scheduler is None:
       return optimizer
     return [optimizer], [lr_scheduler]
+
+
+class BinaryEmotionEEGNetLightning(EmotionEEGNetLightning):
+  """Binary classification variant using note onset counts as targets.
+
+  Inherits from EmotionEEGNetLightning but overrides _compute_loss to:
+  - Count note onsets from music data (NoteOnsets objects)
+  - Compare to median_num_noteonsets threshold
+  - Create binary targets: 0 if <= median, 1 if > median
+  """
+
+  def _compute_loss(self, batch, batch_idx, stage: str):
+    """Compute loss for binary classification based on note onset counts.
+
+    Args:
+        batch: Dictionary with keys:
+            - 'eeg': (batch, channels, timepoints)
+            - 'music': List of NoteOnsets objects
+            - 'info': Dict with dataset and subject info
+        batch_idx: Batch index
+        stage: 'train', 'val', or 'test'
+
+    Returns:
+        loss: Computed loss value
+    """
+    eeg = batch["eeg"]
+    music_data = batch["music"]  # List of NoteOnsets objects
+    batch_size = eeg.shape[0]
+
+    # Count note onsets and create binary targets
+    median_threshold = self.config.median_num_noteonsets
+    targets = torch.tensor(
+      [
+        0 if len(note_onsets.onset_times) <= median_threshold else 1
+        for note_onsets in music_data
+      ],
+      dtype=torch.long,
+      device=eeg.device,
+    )
+
+    # Get subject IDs if using subject-specific preprocessing
+    subject_ids = None
+    if self.subject_mapper is not None:
+      info = batch["info"]
+      subject_ids = torch.tensor(
+        [
+          self.subject_mapper.get_id(info["dataset"][i], info["subject"][i])
+          for i in range(len(info["dataset"]))
+        ],
+        device=eeg.device,
+      )
+
+    # Forward pass
+    logits = self(eeg, subject_ids)
+
+    # Compute loss
+    loss = self.loss_fn(logits, targets)
+
+    # Update metrics
+    if stage == "train":
+      self.train_metrics.update(logits.detach(), targets)
+    elif stage == "val":
+      self.val_metrics.update(logits.detach(), targets)
+    elif stage == "test":
+      self.test_metrics.update(logits.detach(), targets)
+
+    # Log loss
+    self.log(
+      f"{stage}_loss",
+      loss,
+      on_step=True,
+      on_epoch=True,
+      prog_bar=True,
+      batch_size=batch_size,
+    )
+
+    return loss
 
 
 @dataclass
@@ -429,3 +508,38 @@ class EmotionEEGNetTraining(NoteOnsetsTraining):
       **model_config_dict,  # Add model-specific config values
     }
     self.wandb_logger.log_hyperparams(params_to_log)
+
+
+class BinaryEmotionEEGNetTraining(EmotionEEGNetTraining):
+  """Training class for binary emotion classification using note onset counts.
+
+  Inherits from EmotionEEGNetTraining but uses BinaryEmotionEEGNetLightning
+  which classifies based on note onset counts vs median threshold.
+  """
+
+  def create_model(self):
+    """Create BinaryEmotionEEGNetLightning model."""
+    # Get mapper from dataloaders if subject-specific preprocessing is enabled
+    mapper = (
+      self.dataloaders.get("mapper")
+      if self.config.model_config.use_subject_specific
+      else None
+    )
+
+    if self.config.checkpoint_path is not None and self.config.checkpoint_path.exists():
+      # Load from checkpoint
+      print(f"Loading model from checkpoint: {self.config.checkpoint_path}")
+      self.model = BinaryEmotionEEGNetLightning.load_from_checkpoint(
+        self.config.checkpoint_path,
+        config=self.config.model_config,
+        subject_mapper=mapper,
+      )
+    else:
+      # Create fresh model
+      if self.config.checkpoint_path is not None:
+        print(f"Checkpoint path specified but not found: {self.config.checkpoint_path}")
+      print("Creating fresh BinaryEmotionEEGNetLightning model")
+      self.model = BinaryEmotionEEGNetLightning(
+        self.config.model_config,
+        subject_mapper=mapper,
+      )

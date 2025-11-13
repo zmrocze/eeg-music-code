@@ -33,6 +33,7 @@ dependencies = [
   "wandb",
   "lightning",
   "scikit-image",
+  "seaborn",
 
   "eegpt",
 ]
