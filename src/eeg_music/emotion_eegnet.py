@@ -19,7 +19,7 @@ from .eegnet import (
   ATCNetConfig,
   EEGNetWrapper,
 )
-from .eegpt import UseAdamW, UseSGD, mk_optimizer_and_lr_scheduler, LRCosine
+from .eegpt import LRStepLR, UseAdamW, UseSGD, mk_optimizer_and_lr_scheduler, LRCosine
 from .training import NoteOnsetsTraining, OnExceptionCheckpoint
 from .subject_specific import SubjectDatasetMapper
 from lightning.pytorch.callbacks import (
@@ -96,7 +96,7 @@ class EmotionEEGNetModelConfig:
   num_channels: int = 28
   eeg_sample_rate: int = 256
   num_classes: int = 9
-  lr_config: float | LRCosine = 1e-4
+  lr_config: float | LRCosine | LRStepLR = 1e-4
   optimizer: UseAdamW | UseSGD = field(default_factory=UseAdamW)
   use_subject_specific: bool = False
   median_num_noteonsets: int = 35

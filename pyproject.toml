@@ -32,6 +32,7 @@ dependencies = [
   "transformers",
   "wandb",
   "lightning",
+  "lightning-sdk",
   "scikit-image",
   "seaborn",
 
