@@ -73,7 +73,7 @@ all_configs = [
     model_config=TSCeptionConfig(),
     lr_config=LRStepLR(initial_lr=1e-3, step_size=10, gamma=0.9),
     num_epochs=1000,
-    batch_size=4096,
+    batch_size=2048,
   ),
   # create_config(model_config=EEGNetConfig(), lr_config=LRStepLR(initial_lr=1e-3, step_size=3, gamma=0.9), num_epochs=100, batch_size=2048),
   # create_config(model_config=ATCNetConfig(), lr_config=LRStepLR(initial_lr=1e-3, step_size=3, gamma=0.9), num_epochs=100, batch_size=2048),
