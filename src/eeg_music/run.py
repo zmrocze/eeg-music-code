@@ -7,7 +7,7 @@ from eeg_music.emotion_eegnet import (
   EmotionEEGNetModelConfig,
   BinaryEmotionEEGNetTraining,
 )
-from eeg_music.eegnet import TSCeptionConfig, ATCNetConfig
+from eeg_music.eegnet import TSCeptionConfig
 from eeg_music.dataloader import TrialWiseSplit
 from fractions import Fraction
 from eeg_music.eegpt import UseAdamW
@@ -70,10 +70,10 @@ all_configs = [
   # create_config(model_config=TSCeptionConfig(hid_channels=24, num_T=10, num_S=10), lr_config=LRStepLR(initial_lr=1e-3, step_size=30, gamma=0.9), num_epochs=600, batch_size=512),
   # create_config(model_config=FBCNetConfig(num_bands=1), lr_config=LRStepLR(initial_lr=5e-4, step_size=1, gamma=0.9), num_epochs=40, batch_size=4096),
   create_config(
-    model_config=ATCNetConfig(tcn_depth=2, F1=8, num_windows=6, D=1),
+    model_config=TSCeptionConfig(),
     lr_config=LRStepLR(initial_lr=1e-3, step_size=10, gamma=0.9),
-    num_epochs=120,
-    batch_size=4096,
+    num_epochs=1000,
+    batch_size=6144,
   ),
   # create_config(model_config=EEGNetConfig(), lr_config=LRStepLR(initial_lr=1e-3, step_size=3, gamma=0.9), num_epochs=100, batch_size=2048),
   # create_config(model_config=ATCNetConfig(), lr_config=LRStepLR(initial_lr=1e-3, step_size=3, gamma=0.9), num_epochs=100, batch_size=2048),
