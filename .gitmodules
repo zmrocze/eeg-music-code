@@ -1,3 +1,6 @@
 [submodule "submodules/EEGPT"]
 	path = submodules/EEGPT
 	url = https://github.com/zmrocze/EEGPT.git
+[submodule "submodules/pymssa"]
+	path = submodules/pymssa
+	url = https://github.com/kieferk/pymssa.git

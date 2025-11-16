@@ -35,12 +35,15 @@ dependencies = [
   "lightning-sdk",
   "scikit-image",
   "seaborn",
+  "scikit-learn",
+  "pymssa",
 
   "eegpt",
 ]
 
 [tool.uv.sources]
 eegpt = { path = "./submodules/EEGPT" }
+pymssa = { path = "./submodules/pymssa" }
 
 [project.optional-dependencies]
 dev = [
