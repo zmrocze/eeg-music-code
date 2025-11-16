@@ -7,7 +7,7 @@ from eeg_music.emotion_eegnet import (
   EmotionEEGNetModelConfig,
   BinaryEmotionEEGNetTraining,
 )
-from eeg_music.eegnet import TSCeptionConfig
+from eeg_music.eegnet import EEGNetConfig, TSCeptionConfig
 from eeg_music.dataloader import TrialWiseSplit
 from fractions import Fraction
 from eeg_music.eegpt import UseAdamW
@@ -45,8 +45,8 @@ def create_config(
       median_num_noteonsets=35,
     ),
     # data_path = Path("./onesubject_bcmi_37ch"),
-    # data_path=Path("./datasets/onesubject_bcmi_combined_subject10_18ch"),
-    data_path=Path("./datasets/bcmi_combined_18ch"),
+    data_path=Path("./datasets/onesubject_bcmi_combined_subject10_18ch"),
+    # data_path=Path("./datasets/bcmi_combined_18ch"),
     batch_size=batch_size,
     data_loader_num_workers=2,
     prefetch_factor=2,
@@ -69,11 +69,17 @@ all_configs = [
   # create_config(model_config=ATCNetConfig(), lr_config=1e-3, num_epochs=400),
   # create_config(model_config=TSCeptionConfig(hid_channels=24, num_T=10, num_S=10), lr_config=LRStepLR(initial_lr=1e-3, step_size=30, gamma=0.9), num_epochs=600, batch_size=512),
   # create_config(model_config=FBCNetConfig(num_bands=1), lr_config=LRStepLR(initial_lr=5e-4, step_size=1, gamma=0.9), num_epochs=40, batch_size=4096),
+  # create_config(
+  #   model_config=TSCeptionConfig(),
+  #   lr_config=LRStepLR(initial_lr=1e-3, step_size=10, gamma=0.9),
+  #   num_epochs=1000,
+  #   batch_size=1024,
+  # ),
   create_config(
-    model_config=TSCeptionConfig(),
-    lr_config=LRStepLR(initial_lr=1e-3, step_size=10, gamma=0.9),
+    model_config=EEGNetConfig(),
+    lr_config=LRStepLR(initial_lr=1e-4, step_size=10, gamma=0.9),
     num_epochs=1000,
-    batch_size=1024,
+    batch_size=2048,
   ),
   # create_config(model_config=EEGNetConfig(), lr_config=LRStepLR(initial_lr=1e-3, step_size=3, gamma=0.9), num_epochs=100, batch_size=2048),
   # create_config(model_config=ATCNetConfig(), lr_config=LRStepLR(initial_lr=1e-3, step_size=3, gamma=0.9), num_epochs=100, batch_size=2048),
