@@ -38,7 +38,7 @@ def create_config(
       chunk_width=1000,  # 256Hz * 4s
       num_channels=18,
       eeg_sample_rate=250,
-      num_classes=2,
+      num_classes=1,
       lr_config=lr_config,
       use_subject_specific=use_subject_specific,
       optimizer=optimizer,
