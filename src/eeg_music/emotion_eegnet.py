@@ -18,6 +18,7 @@ from .eegnet import (
   TSCeptionConfig,
   ATCNetConfig,
   EEGNetWrapper,
+  BinaryAccuracyCalc,
 )
 from .eegpt import LRStepLR, UseAdamW, UseSGD, mk_optimizer_and_lr_scheduler, LRCosine
 from .training import NoteOnsetsTraining, OnExceptionCheckpoint
@@ -258,13 +259,26 @@ class EmotionEEGNetLightning(LightningModule):
 
 
 class BinaryEmotionEEGNetLightning(EmotionEEGNetLightning):
-  """Binary classification variant using note onset counts as targets.
+  """Binary classification using single logit with BCEWithLogitsLoss.
 
-  Inherits from EmotionEEGNetLightning but overrides _compute_loss to:
-  - Count note onsets from music data (NoteOnsets objects)
-  - Compare to median_num_noteonsets threshold
-  - Create binary targets: 0 if <= median, 1 if > median
+  Counts note onsets and creates binary targets based on median threshold.
   """
+
+  def __init__(
+    self,
+    config: EmotionEEGNetModelConfig,
+    subject_mapper: Optional[SubjectDatasetMapper] = None,
+    **model_kwargs,
+  ):
+    if config.num_classes != 1:
+      raise ValueError(
+        f"BinaryEmotionEEGNetLightning requires num_classes=1, got {config.num_classes}"
+      )
+    super().__init__(config, subject_mapper, **model_kwargs)
+    self.loss_fn = nn.BCEWithLogitsLoss()
+    self.train_metrics = BinaryAccuracyCalc()
+    self.val_metrics = BinaryAccuracyCalc()
+    self.test_metrics = BinaryAccuracyCalc()
 
   def _compute_loss(self, batch, batch_idx, stage: str):
     """Compute loss for binary classification based on note onset counts.
@@ -284,14 +298,14 @@ class BinaryEmotionEEGNetLightning(EmotionEEGNetLightning):
     music_data = batch["music"]  # List of NoteOnsets objects
     batch_size = eeg.shape[0]
 
-    # Count note onsets and create binary targets
+    # Count note onsets and create binary targets (float for BCEWithLogitsLoss)
     median_threshold = self.config.median_num_noteonsets
     targets = torch.tensor(
       [
-        0 if len(note_onsets.onset_times) <= median_threshold else 1
+        0.0 if len(note_onsets.onset_times) <= median_threshold else 1.0
         for note_onsets in music_data
       ],
-      dtype=torch.long,
+      dtype=torch.float32,
       device=eeg.device,
     )
 
@@ -307,8 +321,8 @@ class BinaryEmotionEEGNetLightning(EmotionEEGNetLightning):
         device=eeg.device,
       )
 
-    # Forward pass
-    logits = self(eeg, subject_ids)
+    # Forward pass - returns (batch, 1) tensor, squeeze to (batch,)
+    logits = self(eeg, subject_ids).squeeze(-1)
 
     # Compute loss
     loss = self.loss_fn(logits, targets)
