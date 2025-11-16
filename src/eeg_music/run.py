@@ -60,6 +60,7 @@ def create_config(
     ds_chunk_width=Fraction(4, 1),
     ds_split_type=ds_split_type,
     run_name="eegnet-emotion-binary",
+    save_path="eegnet-emotion-binary-ckpt",
   )
   return config
 
