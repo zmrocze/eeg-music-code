@@ -7,7 +7,7 @@ from eeg_music.emotion_eegnet import (
   EmotionEEGNetModelConfig,
   BinaryEmotionEEGNetTraining,
 )
-from eeg_music.eegnet import EEGNetConfig, TSCeptionConfig
+from eeg_music.eegnet import ATCNetConfig, EEGNetConfig, TSCeptionConfig
 from eeg_music.dataloader import TrialWiseSplit
 from fractions import Fraction
 from eeg_music.eegpt import UseAdamW
@@ -35,7 +35,7 @@ def create_config(
   config = EmotionEEGNetTrainingConfig(
     model_config=EmotionEEGNetModelConfig(
       model_config=model_config,
-      chunk_width=1000,  # 256Hz * 4s
+      chunk_width=250 * 18,  # 256Hz * 4s
       num_channels=18,
       eeg_sample_rate=250,
       num_classes=1,
@@ -57,7 +57,7 @@ def create_config(
     # ds_test_repeated_mul = 10,
     ds_test_repeated_mul=2,
     ds_train_repeated_mul=2,
-    ds_chunk_width=Fraction(4, 1),
+    ds_chunk_width=Fraction(18, 1),
     ds_split_type=ds_split_type,
     run_name="eegnet-emotion-binary",
     save_path="eegnet-emotion-binary-ckpt",
@@ -77,10 +77,22 @@ all_configs = [
   #   batch_size=1024,
   # ),
   create_config(
+    model_config=TSCeptionConfig(),
+    lr_config=LRStepLR(initial_lr=1e-4, step_size=10, gamma=0.9),
+    num_epochs=1000,
+    batch_size=1024,
+  ),
+  create_config(
+    model_config=ATCNetConfig(),
+    lr_config=LRStepLR(initial_lr=1e-4, step_size=10, gamma=0.9),
+    num_epochs=1000,
+    batch_size=1024,
+  ),
+  create_config(
     model_config=EEGNetConfig(),
     lr_config=LRStepLR(initial_lr=1e-4, step_size=10, gamma=0.9),
     num_epochs=1000,
-    batch_size=2048,
+    batch_size=1024,
   ),
   # create_config(model_config=EEGNetConfig(), lr_config=LRStepLR(initial_lr=1e-3, step_size=3, gamma=0.9), num_epochs=100, batch_size=2048),
   # create_config(model_config=ATCNetConfig(), lr_config=LRStepLR(initial_lr=1e-3, step_size=3, gamma=0.9), num_epochs=100, batch_size=2048),

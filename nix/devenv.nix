@@ -18,8 +18,9 @@
           git --version
         '';
 
-        packages = [
-          pkgs.ffmpeg  # Provides ffprobe needed by pydub for MP3 reading
+        packages = with pkgs; [
+          ffmpeg  # Provides ffprobe needed by pydub for MP3 reading
+          zlib
         ];
 
         languages.python = {

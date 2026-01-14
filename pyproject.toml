@@ -36,14 +36,14 @@ dependencies = [
   "scikit-image",
   "seaborn",
   "scikit-learn",
-  "pymssa",
+  "py-ssa-lib",
 
   "eegpt",
 ]
 
 [tool.uv.sources]
 eegpt = { path = "./submodules/EEGPT" }
-pymssa = { path = "./submodules/pymssa" }
+# pymssa = { path = "./submodules/pymssa" }
 
 [project.optional-dependencies]
 dev = [
