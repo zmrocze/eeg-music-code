@@ -16,6 +16,16 @@ import os
 import shutil
 
 
+# assuming mean ~ median here
+mean_num_onsets = {
+  18.5: 36.09252738654147,
+  4: 7.803789705198156,
+  8: 15.607579410396312,
+  12: 23.411369115594468,
+  16: 31.215158820792624,
+}
+
+
 def create_config(
   model_config=None,
   ds_split_type=None,
@@ -24,6 +34,7 @@ def create_config(
   lr_config: float | LRStepLR | LRCosine = 1e-5,
   num_epochs=200,
   batch_size=64,
+  trial_length_secs=18,
 ):
   if model_config is None:
     model_config = TSCeptionConfig()
@@ -35,17 +46,18 @@ def create_config(
   config = EmotionEEGNetTrainingConfig(
     model_config=EmotionEEGNetModelConfig(
       model_config=model_config,
-      chunk_width=250 * 18,  # 256Hz * 4s
+      chunk_width=250 * trial_length_secs,  # 256Hz * 4s
       num_channels=18,
       eeg_sample_rate=250,
       num_classes=1,
       lr_config=lr_config,
       use_subject_specific=use_subject_specific,
       optimizer=optimizer,
-      median_num_noteonsets=35,
+      median_num_noteonsets=int(mean_num_onsets[trial_length_secs]),
     ),
     # data_path = Path("./onesubject_bcmi_37ch"),
-    data_path=Path("./datasets/onesubject_bcmi_combined_subject10_18ch"),
+    # data_path=Path("./datasets/onesubject_bcmi_combined_subject10_18ch"),
+    data_path=Path("./datasets/onesubject_bcmi_18ch_18s"),
     # data_path=Path("./datasets/bcmi_combined_18ch"),
     batch_size=batch_size,
     data_loader_num_workers=2,
@@ -57,7 +69,7 @@ def create_config(
     # ds_test_repeated_mul = 10,
     ds_test_repeated_mul=2,
     ds_train_repeated_mul=2,
-    ds_chunk_width=Fraction(18, 1),
+    ds_chunk_width=Fraction(trial_length_secs, 1),
     ds_split_type=ds_split_type,
     run_name="eegnet-emotion-binary",
     save_path="eegnet-emotion-binary-ckpt",
@@ -78,21 +90,29 @@ all_configs = [
   # ),
   create_config(
     model_config=TSCeptionConfig(),
-    lr_config=LRStepLR(initial_lr=1e-4, step_size=10, gamma=0.9),
+    lr_config=LRStepLR(initial_lr=1e-3, step_size=10, gamma=0.9),
     num_epochs=1000,
-    batch_size=1024,
+    batch_size=512,
+    trial_length_secs=12,
   ),
+  # create_config(
+  #   model_config=TSCeptionConfig(),
+  #   lr_config=LRStepLR(initial_lr=1e-3, step_size=10, gamma=0.9),
+  #   num_epochs=1000,
+  #   batch_size=512,
+  #   trial_length_secs=18,
+  # ),
   create_config(
     model_config=ATCNetConfig(),
     lr_config=LRStepLR(initial_lr=1e-4, step_size=10, gamma=0.9),
     num_epochs=1000,
-    batch_size=1024,
+    batch_size=512,
   ),
   create_config(
     model_config=EEGNetConfig(),
     lr_config=LRStepLR(initial_lr=1e-4, step_size=10, gamma=0.9),
     num_epochs=1000,
-    batch_size=1024,
+    batch_size=512,
   ),
   # create_config(model_config=EEGNetConfig(), lr_config=LRStepLR(initial_lr=1e-3, step_size=3, gamma=0.9), num_epochs=100, batch_size=2048),
   # create_config(model_config=ATCNetConfig(), lr_config=LRStepLR(initial_lr=1e-3, step_size=3, gamma=0.9), num_epochs=100, batch_size=2048),
