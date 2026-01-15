@@ -57,7 +57,7 @@ def create_config(
     ),
     # data_path = Path("./onesubject_bcmi_37ch"),
     # data_path=Path("./datasets/onesubject_bcmi_combined_subject10_18ch"),
-    data_path=Path("./datasets/onesubject_bcmi_18ch_18s"),
+    data_path=Path("./datasets/onesubject_bcmi_combined_18ch_18s"),
     # data_path=Path("./datasets/bcmi_combined_18ch"),
     batch_size=batch_size,
     data_loader_num_workers=2,
