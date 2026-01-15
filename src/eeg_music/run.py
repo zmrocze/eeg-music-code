@@ -34,7 +34,7 @@ def create_config(
   lr_config: float | LRStepLR | LRCosine = 1e-5,
   num_epochs=200,
   batch_size=64,
-  trial_length_secs=18,
+  trial_length_secs=4,
 ):
   if model_config is None:
     model_config = TSCeptionConfig()
