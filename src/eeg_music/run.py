@@ -90,10 +90,24 @@ all_configs = [
   # ),
   create_config(
     model_config=TSCeptionConfig(),
-    lr_config=LRStepLR(initial_lr=1e-3, step_size=10, gamma=0.9),
-    num_epochs=1000,
-    batch_size=512,
+    lr_config=LRStepLR(initial_lr=2e-4, step_size=10, gamma=0.9),
+    num_epochs=100,
+    batch_size=256,
+    trial_length_secs=8,
+  ),
+  create_config(
+    model_config=TSCeptionConfig(),
+    lr_config=LRStepLR(initial_lr=2e-4, step_size=10, gamma=0.9),
+    num_epochs=100,
+    batch_size=256,
     trial_length_secs=12,
+  ),
+  create_config(
+    model_config=TSCeptionConfig(),
+    lr_config=LRStepLR(initial_lr=2e-4, step_size=10, gamma=0.9),
+    num_epochs=100,
+    batch_size=256,
+    trial_length_secs=16,
   ),
   # create_config(
   #   model_config=TSCeptionConfig(),
