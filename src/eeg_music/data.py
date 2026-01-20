@@ -1579,8 +1579,7 @@ class ArrayStratifiedSamplingDataset(EEGMusicDataset):
 
   def __getitem__(self, idx: int) -> TrialData[ArrayEeg, MusicData]:
     """
-    Return a portion of a trial with EEG trimmed using stratified sampling.
-    Music data is passed through unchanged.
+    Return a portion of a trial with EEG and music trimmed using stratified sampling.
     """
     trial_index = idx // self.n_strata
     trial: TrialData[EegData, MusicData] = self.ds.__getitem__(trial_index)
@@ -1605,7 +1604,47 @@ class ArrayStratifiedSamplingDataset(EEGMusicDataset):
     trimmed_data = array_eeg.data[:, random_start : random_start + new_length_samples]
     trimmed_eeg = ArrayEeg(data=trimmed_data, ch_names=array_eeg.ch_names, sfreq=sfreq)
 
-    # Return trial with trimmed EEG and unchanged music
+    # Trim music data to match EEG slice
+    music_obj = trial.music_data.get_music()
+    match music_obj:
+      case WavRAW(raw_data, sample_rate):
+        new_length_samples_music = int_or_err(self.trial_length_secs * sample_rate)
+        tot_m = music_obj.length_samples()
+        random_start_music = round((tot_m * random_start) / n_starts_exact)
+        random_start_music = min(random_start_music, tot_m - new_length_samples_music)
+        return_music = WavRAW(
+          raw_data=raw_data[
+            random_start_music : random_start_music + new_length_samples_music
+          ],
+          sample_rate=sample_rate,
+        )
+
+      case MelRaw(mel, sample_rate, hop_length, fmin, fmax, to_db):
+        new_length_samples_music = int_or_err(
+          self.trial_length_secs * sample_rate / hop_length
+        )
+        tot_m = music_obj.mel.shape[-1]
+        random_start_music = round((tot_m * random_start) / n_starts_exact)
+        random_start_music = min(random_start_music, tot_m - new_length_samples_music)
+        return_music = MelRaw(
+          mel=mel[
+            :, random_start_music : random_start_music + new_length_samples_music
+          ],
+          sample_rate=sample_rate,
+          hop_length=hop_length,
+          fmin=fmin,
+          fmax=fmax,
+          to_db=to_db,
+        )
+
+      case NoteOnsets(_, _, _):
+        start_time_sec = random_start / sfreq
+        end_time_sec = start_time_sec + float(self.trial_length_secs)
+        return_music = music_obj.filter_onsets_in_time_range(
+          start_time_sec, end_time_sec
+        )
+
+    # Return trial with trimmed EEG and trimmed music
     return TrialData(
       dataset=trial.dataset,
       subject=trial.subject,
@@ -1614,7 +1653,7 @@ class ArrayStratifiedSamplingDataset(EEGMusicDataset):
       trial_id=trial.trial_id,
       music_filename=trial.music_filename,
       eeg_data=trimmed_eeg,
-      music_data=trial.music_data,  # Pass through unchanged
+      music_data=return_music,
     )
 
 
