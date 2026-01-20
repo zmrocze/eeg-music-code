@@ -300,6 +300,7 @@ class BinaryEmotionEEGNetLightning(EmotionEEGNetLightning):
 
     # Count note onsets and create binary targets (float for BCEWithLogitsLoss)
     median_threshold = self.config.median_num_noteonsets
+    print("len0", len(music_data[0].onset_times))
     targets = torch.tensor(
       [
         0.0 if len(note_onsets.onset_times) <= median_threshold else 1.0
