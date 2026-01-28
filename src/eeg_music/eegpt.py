@@ -329,12 +329,12 @@ class EegptConfig:
 
 @dataclass
 class UseAdamW:
-  pass
+  weight_decay: float = 0.0
 
 
 @dataclass
 class UseSGD:
-  pass
+  weight_decay: float = 0.0
 
 
 def mk_optimizer_and_lr_scheduler(
@@ -352,10 +352,10 @@ def mk_optimizer_and_lr_scheduler(
 
   def mk_optimizer(lr):
     match optimizer:
-      case UseAdamW():
-        return torch.optim.AdamW(trainable_params, lr=lr)
-      case UseSGD():
-        return torch.optim.SGD(trainable_params, lr=lr)
+      case UseAdamW(weight_decay=wd):
+        return torch.optim.AdamW(trainable_params, lr=lr, weight_decay=wd)
+      case UseSGD(weight_decay=wd):
+        return torch.optim.SGD(trainable_params, lr=lr, weight_decay=wd)
 
   if isinstance(lr_config, float):
     opt = mk_optimizer(lr_config)

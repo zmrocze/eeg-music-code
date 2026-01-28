@@ -95,6 +95,7 @@ all_configs = [
     num_epochs=100,
     batch_size=256,
     trial_length_secs=8,
+    optimizer=UseAdamW(weight_decay=1e-5),
   ),
   create_config(
     model_config=TSCeptionConfig(),
