@@ -329,7 +329,7 @@ class EegptConfig:
 
 @dataclass
 class UseAdamW:
-  weight_decay: float = 0.0
+  weight_decay: float = 1e-2
 
 
 @dataclass
