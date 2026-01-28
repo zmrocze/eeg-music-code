@@ -304,7 +304,7 @@ class BinaryEmotionEEGNetLightning(EmotionEEGNetLightning):
     median_threshold = self.config.median_num_noteonsets
     targets = torch.tensor(
       [
-        -1.0 if len(note_onsets.onset_times) <= median_threshold else 1.0
+        0.0 if len(note_onsets.onset_times) <= median_threshold else 1.0
         for note_onsets in music_data
       ],
       dtype=torch.float32,

@@ -28,6 +28,7 @@ class BinaryAccuracyCalc:
     self.mean = 0.0  # Running mean
     self.m2 = 0.0  # Sum of squared differences from mean
     self.num_positive_targets = 0  # Count of positive targets
+    self.num_positive_predictions = 0  # Count of positive predictions
 
   def update(self, logits: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5):
     """Update metrics with new logits and targets.
@@ -58,15 +59,16 @@ class BinaryAccuracyCalc:
     self.fp += ((predictions) & (~targets_bool)).sum().item()
     self.fn += ((~predictions) & (targets_bool)).sum().item()
 
-    # Track positive targets
+    # Track positive targets and predictions
     self.num_positive_targets += targets_bool.sum().item()
+    self.num_positive_predictions += predictions.sum().item()
 
   def compute(self) -> dict[str, float]:
     """Compute all binary classification metrics.
 
     Returns:
       Dictionary with keys: accuracy, recall, specificity, precision, f1_score,
-                           logits_mean, logits_std, positive_rate
+                           logits_mean, logits_std, positive_rate, prediction_rate
 
     Formulas:
       - Accuracy = (TP + TN) / (TP + TN + FP + FN)
@@ -105,6 +107,9 @@ class BinaryAccuracyCalc:
     # Positive target rate
     positive_rate = self.num_positive_targets / total if total > 0 else 0.0
 
+    # Positive prediction rate
+    prediction_rate = self.num_positive_predictions / total if total > 0 else 0.0
+
     return {
       "accuracy": accuracy,
       "recall": recall,
@@ -114,6 +119,7 @@ class BinaryAccuracyCalc:
       "logits_mean": logits_mean,
       "logits_std": logits_std,
       "positive_rate": positive_rate,
+      "prediction_rate": prediction_rate,
     }
 
   def reset(self):
@@ -126,6 +132,7 @@ class BinaryAccuracyCalc:
     self.mean = 0.0
     self.m2 = 0.0
     self.num_positive_targets = 0
+    self.num_positive_predictions = 0
 
 
 class EEGNetWrapper(nn.Module):
