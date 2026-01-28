@@ -164,6 +164,8 @@ class EmotionEEGNetLightning(LightningModule):
     emotion_codes = batch["info"]["emotion"]  # List of emotion codes (1-9 or None)
     batch_size = eeg.shape[0]
 
+    print("Warning: use oneshotencoding")
+
     # Convert to class indices (0-8) for CrossEntropyLoss. Subtract 1 to map 1-9 to 0-8
     targets = torch.tensor(
       [code - 1 if code is not None else 0 for code in emotion_codes],
@@ -302,7 +304,7 @@ class BinaryEmotionEEGNetLightning(EmotionEEGNetLightning):
     median_threshold = self.config.median_num_noteonsets
     targets = torch.tensor(
       [
-        0.0 if len(note_onsets.onset_times) <= median_threshold else 1.0
+        -1.0 if len(note_onsets.onset_times) <= median_threshold else 1.0
         for note_onsets in music_data
       ],
       dtype=torch.float32,
