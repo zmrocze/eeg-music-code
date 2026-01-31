@@ -35,6 +35,7 @@ def create_config(
   num_epochs=200,
   batch_size=64,
   trial_length_secs=4,
+  data_path=Path("./datasets/onesubject_bcmi_combined_18ch_18s"),
 ):
   if model_config is None:
     model_config = TSCeptionConfig()
@@ -57,7 +58,7 @@ def create_config(
     ),
     # data_path = Path("./onesubject_bcmi_37ch"),
     # data_path=Path("./datasets/onesubject_bcmi_combined_subject10_18ch"),
-    data_path=Path("./datasets/onesubject_bcmi_combined_18ch_18s"),
+    data_path=data_path,
     # data_path=Path("./datasets/bcmi_preprocessed/bcmi_combined_18ch_18s_onsets/"),
     # data_path=Path("./datasets/bcmi_combined_18ch"),
     batch_size=batch_size,
