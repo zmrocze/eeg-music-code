@@ -6,6 +6,7 @@ It extends the note onset detection framework to handle multi-class classificati
 
 import torch
 import torch.nn as nn
+import wandb
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional, Union
@@ -368,6 +369,10 @@ class EmotionEEGNetTrainingConfig:
     )
   )
   checkpoint_path: Optional[Path] = None
+
+  # Wandb checkpoint loading (e.g., 'user/project/model-id:version')
+  wandb_checkpoint: Optional[str] = None
+
   data_path: Path = Path("./datasets/bcmi_preprocessed/bcmi_combined_prepared_mel_28ch")
   data_loader_num_workers: int = 2
   prefetch_factor: int = 2
@@ -434,8 +439,21 @@ class EmotionEEGNetTraining(NoteOnsetsTraining):
       else None
     )
 
-    if self.config.checkpoint_path is not None and self.config.checkpoint_path.exists():
-      # Load from checkpoint
+    if self.config.wandb_checkpoint is not None:
+      # Load from wandb checkpoint (takes priority)
+      print(f"Loading model from wandb checkpoint: {self.config.wandb_checkpoint}")
+      run = wandb.init()
+      artifact = run.use_artifact(self.config.wandb_checkpoint, type="model")
+      artifact_dir = artifact.download()
+      self.model = EmotionEEGNetLightning.load_from_checkpoint(
+        artifact_dir + "/model.ckpt",
+        config=self.config.model_config,
+        subject_mapper=mapper,
+      )
+    elif (
+      self.config.checkpoint_path is not None and self.config.checkpoint_path.exists()
+    ):
+      # Load from local checkpoint
       print(f"Loading model from checkpoint: {self.config.checkpoint_path}")
       self.model = EmotionEEGNetLightning.load_from_checkpoint(
         self.config.checkpoint_path,
@@ -542,8 +560,21 @@ class BinaryEmotionEEGNetTraining(EmotionEEGNetTraining):
       else None
     )
 
-    if self.config.checkpoint_path is not None and self.config.checkpoint_path.exists():
-      # Load from checkpoint
+    if self.config.wandb_checkpoint is not None:
+      # Load from wandb checkpoint (takes priority)
+      print(f"Loading model from wandb checkpoint: {self.config.wandb_checkpoint}")
+      run = wandb.init()
+      artifact = run.use_artifact(self.config.wandb_checkpoint, type="model")
+      artifact_dir = artifact.download()
+      self.model = BinaryEmotionEEGNetLightning.load_from_checkpoint(
+        artifact_dir + "/model.ckpt",
+        config=self.config.model_config,
+        subject_mapper=mapper,
+      )
+    elif (
+      self.config.checkpoint_path is not None and self.config.checkpoint_path.exists()
+    ):
+      # Load from local checkpoint
       print(f"Loading model from checkpoint: {self.config.checkpoint_path}")
       self.model = BinaryEmotionEEGNetLightning.load_from_checkpoint(
         self.config.checkpoint_path,

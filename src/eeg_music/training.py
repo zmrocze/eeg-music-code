@@ -68,6 +68,9 @@ class TrainingConfig:
 
   # ckpt_load_path: Optional[str] = None  # 'best', 'last', <path]>
 
+  # Wandb checkpoint loading (e.g., 'user/project/model-id:version')
+  wandb_checkpoint: Optional[str] = None
+
   wandb_log_model: Union[Literal["all"], bool] = "all"
   project_name: str = "neural-music-decoding"
   run_name: str = "eegpt-2layer-mel"
@@ -126,6 +129,9 @@ class NoteOnsetsTrainingConfig:
 
   # Checkpoint path (if available, otherwise train from scratch)
   checkpoint_path: Optional[Path] = None
+
+  # Wandb checkpoint loading (e.g., 'user/project/model-id:version')
+  wandb_checkpoint: Optional[str] = None
 
   # Data settings
   data_path: Path = Path("./datasets/bcmi_preprocessed/bcmi_combined_noteonsets_28ch")
@@ -700,8 +706,21 @@ class NoteOnsetsTraining(MainTraining):
       else None
     )
 
-    if self.config.checkpoint_path is not None and self.config.checkpoint_path.exists():
-      # Load from checkpoint
+    if self.config.wandb_checkpoint is not None:
+      # Load from wandb checkpoint (takes priority)
+      print(f"Loading model from wandb checkpoint: {self.config.wandb_checkpoint}")
+      run = wandb.init()
+      artifact = run.use_artifact(self.config.wandb_checkpoint, type="model")
+      artifact_dir = artifact.download()
+      self.model = EEGNetLightning.load_from_checkpoint(
+        artifact_dir + "/model.ckpt",
+        config=self.config.model_config,
+        subject_mapper=mapper,
+      )
+    elif (
+      self.config.checkpoint_path is not None and self.config.checkpoint_path.exists()
+    ):
+      # Load from local checkpoint
       print(f"Loading model from checkpoint: {self.config.checkpoint_path}")
       self.model = EEGNetLightning.load_from_checkpoint(
         self.config.checkpoint_path,

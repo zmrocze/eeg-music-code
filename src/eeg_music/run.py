@@ -7,7 +7,7 @@ from eeg_music.emotion_eegnet import (
   EmotionEEGNetModelConfig,
   BinaryEmotionEEGNetTraining,
 )
-from eeg_music.eegnet import ATCNetConfig, EEGNetConfig, FBCNetConfig, TSCeptionConfig
+from eeg_music.eegnet import ATCNetConfig, EEGNetConfig, TSCeptionConfig
 from eeg_music.dataloader import TrialWiseSplit
 from fractions import Fraction
 from eeg_music.eegpt import UseAdamW
@@ -75,6 +75,7 @@ def create_config(
     ds_split_type=ds_split_type,
     run_name="eegnet-emotion-binary",
     save_path="eegnet-emotion-binary-ckpt",
+    wandb_checkpoint="zmrocze-uniwroc/emotion-classification-eegnet/model-deloej6h:v176",
   )
   return config
 
@@ -91,9 +92,9 @@ all_configs = [
   #   batch_size=1024,
   # ),
   create_config(
-    model_config=FBCNetConfig(num_bands=1),
-    lr_config=LRStepLR(initial_lr=2e-5, step_size=10, gamma=0.9),
-    num_epochs=60,
+    model_config=EEGNetConfig(),
+    lr_config=LRStepLR(initial_lr=2e-4, step_size=10, gamma=0.9),
+    num_epochs=150,
     batch_size=256,
     trial_length_secs=12,
     # use_subject_specific=True,
