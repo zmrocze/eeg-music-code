@@ -48,7 +48,7 @@ def create_config(
     model_config=EmotionEEGNetModelConfig(
       model_config=model_config,
       chunk_width=250 * trial_length_secs,  # 256Hz * 4s
-      num_channels=18,
+      num_channels=8,
       eeg_sample_rate=250,
       num_classes=1,
       lr_config=lr_config,
@@ -58,7 +58,9 @@ def create_config(
     ),
     # data_path = Path("./onesubject_bcmi_37ch"),
     # data_path=Path("./datasets/onesubject_bcmi_combined_subject10_18ch"),
-    data_path=data_path,
+    # data_path=data_path,
+    data_path=Path("./datasets/bcmi_preprocessed/bcmi_combined_8ch_18s_30hz"),
+    # data_path=Path("./datasets/bcmi_preprocessed/bcmi_combined_8ch_18s_30hz"),
     # data_path=Path("./datasets/bcmi_preprocessed/bcmi_combined_18ch_18s_onsets/"),
     # data_path=Path("./datasets/bcmi_combined_18ch"),
     batch_size=batch_size,

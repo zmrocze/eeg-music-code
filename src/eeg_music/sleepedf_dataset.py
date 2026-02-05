@@ -1,18 +1,16 @@
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from braindecode.datasets import SleepPhysionet
+from braindecode.datasets import SleepPhysionet, WindowsDataset
 from braindecode.preprocessing import (
   Preprocessor,
   create_windows_from_events,
   preprocess,
 )
 from sklearn.preprocessing import scale as standard_scale
-from torch.utils.data import Dataset
 
 
 def load_sleepedf_dataset(
-  path: str,
   subject_ids: List[int],
   recording_ids: Optional[List[int]] = None,
   crop_wake_mins: int = 30,
@@ -21,12 +19,11 @@ def load_sleepedf_dataset(
   sfreq: int = 100,
   preload: bool = True,
   channel_wise_scale: bool = True,
-) -> Tuple[Dataset, Dict[str, int]]:
+) -> Tuple[WindowsDataset, Dict[str, int]]:
   """
   Load SleepEDF dataset using braindecode and prepare it as PyTorch dataset.
 
   Args:
-      path: Path to the dataset directory (not used by braindecode, downloads automatically)
       subject_ids: List of subject IDs to load (0-indexed)
       recording_ids: List of recording IDs to load (default: [2] for night 2)
       crop_wake_mins: Minutes of wake time to crop from start/end
@@ -37,7 +34,7 @@ def load_sleepedf_dataset(
       channel_wise_scale: Whether to apply channel-wise z-score normalization
 
   Returns:
-      windows_dataset: Braindecode WindowsDataset (PyTorch compatible)
+      windows_dataset: Braindecode WindowsDataset with .split() method
       mapping: Dictionary mapping sleep stage names to integer labels
   """
   if recording_ids is None:
