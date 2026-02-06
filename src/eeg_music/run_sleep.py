@@ -7,7 +7,7 @@ from eeg_music.sleepedf_eegnet import (
   SleepEDFDataConfig,
   EmotionEEGNetModelConfig,
 )
-from eeg_music.eegnet import EEGNetConfig, TSCeptionConfig
+from eeg_music.eegnet import EEGNetConfig
 
 
 def create_sleep_config(
@@ -103,9 +103,9 @@ all_configs = [
   # ),
   # TSCeption model
   create_sleep_config(
-    model_config=TSCeptionConfig(),
-    lr_config=LRStepLR(initial_lr=1e-3, step_size=15, gamma=0.9),
-    num_epochs=150,
+    model_config=EEGNetConfig(),
+    lr_config=LRStepLR(initial_lr=1e-3, step_size=30, gamma=0.9),
+    num_epochs=500,
     batch_size=1024,
   ),
   # ATCNet model

@@ -95,9 +95,9 @@ all_configs = [
   # ),
   create_config(
     model_config=EEGNetConfig(),
-    lr_config=LRStepLR(initial_lr=2e-4, step_size=10, gamma=0.9),
-    num_epochs=150,
-    batch_size=256,
+    lr_config=LRStepLR(initial_lr=1e-3, step_size=30, gamma=0.9),
+    num_epochs=500,
+    batch_size=1024,
     trial_length_secs=12,
     # use_subject_specific=True,
     optimizer=UseAdamW(),
