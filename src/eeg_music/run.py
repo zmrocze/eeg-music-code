@@ -59,7 +59,7 @@ def create_config(
     # data_path = Path("./onesubject_bcmi_37ch"),
     # data_path=Path("./datasets/onesubject_bcmi_combined_subject10_18ch"),
     # data_path=data_path,
-    data_path=Path("./datasets/bcmi_preprocessed/bcmi_combined_8ch_18s_30hz"),
+    data_path=Path("./datasets/bcmi_combined_8ch_18s_30hz"),
     # data_path=Path("./datasets/bcmi_preprocessed/bcmi_combined_8ch_18s_30hz"),
     # data_path=Path("./datasets/bcmi_preprocessed/bcmi_combined_18ch_18s_onsets/"),
     # data_path=Path("./datasets/bcmi_combined_18ch"),
