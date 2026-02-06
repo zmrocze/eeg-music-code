@@ -77,7 +77,7 @@ def create_config(
     ds_split_type=ds_split_type,
     run_name="eegnet-emotion-binary",
     save_path="eegnet-emotion-binary-ckpt",
-    wandb_checkpoint="zmrocze-uniwroc/emotion-classification-eegnet/model-deloej6h:v176",
+    # wandb_checkpoint="zmrocze-uniwroc/emotion-classification-eegnet/model-deloej6h:v176",
   )
   return config
 
