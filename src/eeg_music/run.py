@@ -78,6 +78,7 @@ def create_config(
     run_name="eegnet-emotion-binary",
     save_path="eegnet-emotion-binary-ckpt",
     # wandb_checkpoint="zmrocze-uniwroc/emotion-classification-eegnet/model-deloej6h:v176",
+    # wandb_checkpoint="zmrocze-uniwroc/emotion-classification-eegnet/model-ysgram35:v27",
   )
   return config
 
@@ -95,7 +96,7 @@ all_configs = [
   # ),
   create_config(
     model_config=EEGNetConfig(),
-    lr_config=LRStepLR(initial_lr=1e-3, step_size=30, gamma=0.9),
+    lr_config=LRCosine(max_lr=1e-3, T_0=10, T_mult=2),
     num_epochs=500,
     batch_size=1024,
     trial_length_secs=12,
