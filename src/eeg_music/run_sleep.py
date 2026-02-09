@@ -8,6 +8,8 @@ from eeg_music.sleepedf_eegnet import (
   EmotionEEGNetModelConfig,
 )
 from eeg_music.eegnet import EEGNetConfig
+import os
+import shutil
 
 
 def create_sleep_config(
@@ -104,7 +106,7 @@ all_configs = [
   # TSCeption model
   create_sleep_config(
     model_config=EEGNetConfig(),
-    lr_config=LRStepLR(initial_lr=1e-3, step_size=30, gamma=0.9),
+    lr_config=LRStepLR(initial_lr=1e-5, step_size=30, gamma=0.9),
     num_epochs=500,
     batch_size=1024,
   ),
@@ -120,6 +122,12 @@ all_configs = [
 if __name__ == "__main__":
   # Run all configurations sequentially
   for i, config in enumerate(all_configs):
+    directory_to_remove = "eegnet-emotion-9class-ckpt"
+    if os.path.exists(directory_to_remove):
+      shutil.rmtree(directory_to_remove)
+      print(f"Directory '{directory_to_remove}' removed successfully.")
+    else:
+      print(f"Directory '{directory_to_remove}' does not exist.")
     print(f"\n{'=' * 80}")
     print(f"Running configuration {i + 1}/{len(all_configs)}")
     print(f"Model: {type(config.model_config.model_config).__name__}")
