@@ -20,6 +20,7 @@ from .data import (
   WavRAW,
   rereference_trial,
   trial_to_arrayeeg,
+  robust_normalize_trial,
 )
 from .emotion_utils import parse_music_emotion
 from pathlib import Path
@@ -151,27 +152,39 @@ def create_dataloaders_but_with_normalization(
   collate_fn=None,
   include_mapper: bool = False,
   split_type: SubjectWiseSplit | TrialWiseSplit = SubjectWiseSplit(),
+  use_global_normalization=False,
+  use_local_normalization=True,
 ) -> Dict[str, Any]:
   def after_loaded_ds(ds, trial_length_secs=Fraction(4, 1), pre_calculated_stats=None):
     # Apply rereferencing
     dereferenced = MappedDataset(ds, lambda x: trial_to_arrayeeg(rereference_trial(x)))
     # Apply robust normalization
-    normalized = RobustNormalizedDataset(
-      dereferenced, pre_calculated_stats=pre_calculated_stats
-    )
-    robust_stats = RobustNormalizationStats(
-      p25=normalized.p25,
-      p75=normalized.p75,
-      iqr=normalized.iqr,
-      median=normalized.median,
-    )
+    if use_global_normalization:
+      normalized = RobustNormalizedDataset(
+        dereferenced, pre_calculated_stats=pre_calculated_stats
+      )
+      robust_stats = RobustNormalizationStats(
+        p25=normalized.p25,
+        p75=normalized.p75,
+        iqr=normalized.iqr,
+        median=normalized.median,
+      )
+    else:
+      robust_stats = None
+      normalized = dereferenced
     # Apply stratified sampling (last, after preprocessing)
     stratified = ArrayStratifiedSamplingDataset(
       normalized,
       n_strata=10,
       trial_length_secs=trial_length_secs,
     )
-    return stratified, robust_stats
+
+    if use_local_normalization:
+      mapped = MappedDataset(stratified, robust_normalize_trial)
+    else:
+      mapped = stratified
+
+    return mapped, robust_stats
 
   ds = EEGMusicDataset.load_ondisk(ds_path)
 

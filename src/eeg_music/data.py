@@ -1358,6 +1358,24 @@ def trial_to_arrayeeg(trial: TrialData[Any, M]) -> TrialData[ArrayEeg, M]:
   )
 
 
+def robust_normalize_trial(trial):
+  xx = trial.eeg_data.get_array().data
+  p25 = np.percentile(xx, 25, axis=1, keepdims=True)
+  p75 = np.percentile(xx, 75, axis=1, keepdims=True)
+  p50 = np.median(xx, axis=1, keepdims=True)
+  yy = (xx - p50) / (p75 - p25)
+  return TrialData(
+    dataset=trial.dataset,
+    subject=trial.subject,
+    session=trial.session,
+    run=trial.run,
+    trial_id=trial.trial_id,
+    music_filename=trial.music_filename,
+    eeg_data=ArrayEeg(yy, trial.eeg_data.ch_names, trial.eeg_data.sfreq),
+    music_data=trial.music_data,
+  )
+
+
 class MappedDataset(EEGMusicDataset):
   """Dataset with a mapping function applied to each trial on access."""
 

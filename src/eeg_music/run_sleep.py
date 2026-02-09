@@ -106,7 +106,7 @@ all_configs = [
   # TSCeption model
   create_sleep_config(
     model_config=EEGNetConfig(),
-    lr_config=LRStepLR(initial_lr=1e-5, step_size=30, gamma=0.9),
+    lr_config=LRStepLR(initial_lr=1e-5, step_size=100, gamma=0.9),
     num_epochs=500,
     batch_size=1024,
   ),
