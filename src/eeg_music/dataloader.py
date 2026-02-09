@@ -152,9 +152,10 @@ def create_dataloaders_but_with_normalization(
   collate_fn=None,
   include_mapper: bool = False,
   split_type: SubjectWiseSplit | TrialWiseSplit = SubjectWiseSplit(),
-  use_global_normalization=False,
-  use_local_normalization=True,
 ) -> Dict[str, Any]:
+  use_global_normalization = config.use_global_normalization
+  use_local_normalization = config.use_local_normalization
+
   def after_loaded_ds(ds, trial_length_secs=Fraction(4, 1), pre_calculated_stats=None):
     # Apply rereferencing
     dereferenced = MappedDataset(ds, lambda x: trial_to_arrayeeg(rereference_trial(x)))
