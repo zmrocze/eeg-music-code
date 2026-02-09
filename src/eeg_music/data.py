@@ -1360,9 +1360,9 @@ def trial_to_arrayeeg(trial: TrialData[Any, M]) -> TrialData[ArrayEeg, M]:
 
 def robust_normalize_trial(trial):
   xx = trial.eeg_data.get_array().data
-  p25 = np.percentile(xx, 25, axis=1, keepdims=True)
-  p75 = np.percentile(xx, 75, axis=1, keepdims=True)
-  p50 = np.median(xx, axis=1, keepdims=True)
+  p25 = np.percentile(xx, 25, axis=1, keepdims=True).astype(np.float32)
+  p75 = np.percentile(xx, 75, axis=1, keepdims=True).astype(np.float32)
+  p50 = np.median(xx, axis=1, keepdims=True).astype(np.float32)
   yy = (xx - p50) / (p75 - p25)
   return TrialData(
     dataset=trial.dataset,
