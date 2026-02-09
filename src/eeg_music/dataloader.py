@@ -158,6 +158,7 @@ def create_dataloaders_but_with_normalization(
   def after_loaded_ds(ds, trial_length_secs=Fraction(4, 1), pre_calculated_stats=None):
     # Apply rereferencing
     dereferenced = MappedDataset(ds, lambda x: trial_to_arrayeeg(rereference_trial(x)))
+    dereferenced.load_to_mem()
     # Apply robust normalization
     if use_global_normalization:
       normalized = RobustNormalizedDataset(
@@ -187,6 +188,7 @@ def create_dataloaders_but_with_normalization(
     return mapped, robust_stats
 
   ds = EEGMusicDataset.load_ondisk(ds_path)
+  ds.load_to_mem()
 
   # Choose split method based on split_type
   match split_type:
