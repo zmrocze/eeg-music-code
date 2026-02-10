@@ -390,8 +390,10 @@ class EmotionEEGNetTrainingConfig:
   ds_test_repeated_mul: int = 10
   ds_chunk_width: Fraction = Fraction(4, 1)
   ds_split_type: TrialWiseSplit = field(default_factory=TrialWiseSplit)
-  use_global_normalization: bool = False
+  use_global_normalization: bool = True
   use_local_normalization: bool = True
+  local_normalization_variant: int = 1
+  global_normalization_variant: int = 0
   wandb_log_model: Union[Literal["all"], bool] = "all"
   project_name: str = "emotion-classification-eegnet"
   run_name: str = "eegnet-emotion-9class"

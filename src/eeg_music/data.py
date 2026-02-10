@@ -1376,6 +1376,23 @@ def robust_normalize_trial(trial):
   )
 
 
+def std_normalize_trial_per_channel(trial):
+  xx = trial.eeg_data.get_array().data
+  mean = np.mean(xx, axis=1, keepdims=True).astype(np.float32)
+  std = np.std(xx, axis=1, keepdims=True).astype(np.float32)
+  yy = (xx - mean) / std
+  return TrialData(
+    dataset=trial.dataset,
+    subject=trial.subject,
+    session=trial.session,
+    run=trial.run,
+    trial_id=trial.trial_id,
+    music_filename=trial.music_filename,
+    eeg_data=ArrayEeg(yy, trial.eeg_data.ch_names, trial.eeg_data.sfreq),
+    music_data=trial.music_data,
+  )
+
+
 class MappedDataset(EEGMusicDataset):
   """Dataset with a mapping function applied to each trial on access."""
 

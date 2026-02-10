@@ -19,6 +19,7 @@ from .data import (
   EegData,
   WavRAW,
   rereference_trial,
+  std_normalize_trial_per_channel,
   trial_to_arrayeeg,
   robust_normalize_trial,
 )
@@ -155,6 +156,8 @@ def create_dataloaders_but_with_normalization(
 ) -> Dict[str, Any]:
   use_global_normalization = config.use_global_normalization
   use_local_normalization = config.use_local_normalization
+  _global_normalization_variant = config.global_normalization_variant
+  local_normalization_variant = config.local_normalization_variant
 
   def after_loaded_ds(ds, trial_length_secs=Fraction(4, 1), pre_calculated_stats=None):
     # Apply rereferencing
@@ -182,7 +185,14 @@ def create_dataloaders_but_with_normalization(
     )
 
     if use_local_normalization:
-      mapped = MappedDataset(stratified, robust_normalize_trial)
+      if local_normalization_variant == 0:
+        mapped = MappedDataset(stratified, robust_normalize_trial)
+      elif local_normalization_variant == 1:
+        mapped = MappedDataset(stratified, std_normalize_trial_per_channel)
+      else:
+        raise ValueError(
+          f"Unknown local normalization variant: {local_normalization_variant}"
+        )
     else:
       mapped = stratified
 

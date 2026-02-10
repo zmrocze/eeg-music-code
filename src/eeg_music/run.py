@@ -8,7 +8,7 @@ from eeg_music.emotion_eegnet import (
   BinaryEmotionEEGNetTraining,
 )
 from eeg_music.eegnet import ATCNetConfig, EEGNetConfig, TSCeptionConfig
-from eeg_music.dataloader import SubjectWiseSplit, TrialWiseSplit
+from eeg_music.dataloader import TrialWiseSplit
 from fractions import Fraction
 from eeg_music.eegpt import UseAdamW
 
@@ -59,7 +59,11 @@ def create_config(
     # data_path = Path("./onesubject_bcmi_37ch"),
     # data_path=Path("./datasets/onesubject_bcmi_combined_subject10_18ch"),
     # data_path=data_path,
-    data_path=Path("./datasets/bcmi_combined_4ch_18s_30hz"),
+    # data_path=Path("./datasets/bcmi_combined_4ch_18s_30hz"),
+    # data_path=Path("./datasets/bcmi_preprocessed/bcmi_combined_4ch_18s_30hz"),
+    data_path=Path(
+      "./datasets/bcmi_preprocessed/onesubject_bcmi_combined_4ch_18s_30hz"
+    ),
     # data_path=Path("./datasets/bcmi_preprocessed/bcmi_combined_8ch_18s_30hz"),
     # data_path=Path("./datasets/bcmi_preprocessed/bcmi_combined_18ch_18s_onsets/"),
     # data_path=Path("./datasets/bcmi_combined_18ch"),
@@ -70,7 +74,10 @@ def create_config(
     pin_memory=True,
     ds_split_seed=13,
     num_epochs=num_epochs,
-    use_global_normalization=True,
+    # use_global_normalization=True,
+    use_global_normalization=False,
+    use_local_normalization=False,
+    # local_normalization_variant=1,
     # ds_test_repeated_mul = 10,
     ds_test_repeated_mul=4,
     ds_train_repeated_mul=4,
@@ -97,25 +104,26 @@ all_configs = [
   # ),
   create_config(
     model_config=EEGNetConfig(),
-    lr_config=LRCosine(max_lr=1e-3, T_0=10, T_mult=2),
+    lr_config=LRCosine(max_lr=3e-4, T_0=10, T_mult=2),
     num_epochs=500,
     batch_size=512,
     # trial_length_secs=12,
     trial_length_secs=8,
     # use_subject_specific=True,
     optimizer=UseAdamW(),
-    ds_split_type=SubjectWiseSplit(),
+    # ds_split_type=SubjectWiseSplit(),
+    ds_split_type=TrialWiseSplit(),
   ),
-  create_config(
-    model_config=TSCeptionConfig(),
-    lr_config=LRStepLR(initial_lr=2e-5, step_size=10, gamma=0.9),
-    num_epochs=60,
-    batch_size=256,
-    trial_length_secs=16,
-    # use_subject_specific=True,
-    optimizer=UseAdamW(weight_decay=0.1),
-    ds_split_type=SubjectWiseSplit(),
-  ),
+  # create_config(
+  #   model_config=TSCeptionConfig(),
+  #   lr_config=LRStepLR(initial_lr=2e-4, step_size=10, gamma=0.9),
+  #   num_epochs=60,
+  #   batch_size=512,
+  #   trial_length_secs=8,
+  #   # use_subject_specific=True,
+  #   optimizer=UseAdamW(),
+  #   ds_split_type=SubjectWiseSplit(),
+  # ),
   # create_config(
   #   model_config=TSCeptionConfig(),
   #   lr_config=LRStepLR(initial_lr=2e-5, step_size=10, gamma=0.9),
