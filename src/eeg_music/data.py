@@ -38,7 +38,7 @@ class MusicData(ABC):
 
   @abstractmethod
   def get_music(self) -> "WavRAW | MelRaw | NoteOnsets | MusingMusicIdData":
-    """Get the music as WavRAW, MelRaw, NoteOnsets, or MusingMusicIdData."""
+    """Get the music as WavRAW, MelRaw, NoteOnsets, or MusingMusicIdData data."""
     pass
 
   @abstractmethod
@@ -243,12 +243,11 @@ class MusingMusicIdData(MusicData):
     return self
 
   def length_seconds(self) -> float:
-    """Return infinity since music IDs have no temporal extent.
-
-    This allows filtering and sampling methods to effectively ignore
-    music length constraints and only consider EEG length.
-    """
-    return float("inf")
+    """MusingMusicIdData has no audio, so length is not available."""
+    raise NotImplementedError(
+      "MusingMusicIdData doesn't contain audio data. "
+      "Use filter to exclude MUSIN-G trials before operations requiring audio length."
+    )
 
   def save(self, filepath: Path) -> None:
     """Save the music ID to a JSON file."""
@@ -1282,7 +1281,7 @@ def prepare_trial(
   # remove_channels: Optional[List[str]] = None,
   pick_channels: Optional[List[str]] = None,
   max_len: Optional[float] = None,
-) -> TrialData[RawEeg, WavRAW | MelRaw | NoteOnsets | MusingMusicIdData]:
+) -> TrialData[RawEeg, WavRAW | MelRaw | NoteOnsets]:
   """Set common length between music and eeg, resample eeg and filter eeg, transform music to mel spectrogram.
 
   Optional music resampling, applied before mel transform if any.
@@ -1309,9 +1308,7 @@ def prepare_trial(
         wav = wav.resampled(new_sr=wav_resample)
         raw, sr = wav.raw_data, wav.sample_rate
       max_samples = int(min_len * sr)
-      music_cropped: WavRAW | MelRaw | NoteOnsets | MusingMusicIdData = WavRAW(
-        raw[:max_samples], sr
-      )
+      music_cropped: WavRAW | MelRaw | NoteOnsets = WavRAW(raw[:max_samples], sr)
       # (optional) apply mel transform could go here if apply_mel is not None
       if apply_mel is not None:
         music_cropped = wavraw_to_melspectrogram(music_cropped, **apply_mel.as_kwargs())
@@ -1329,9 +1326,11 @@ def prepare_trial(
       assert apply_mel is None, "Can't apply_mel if the input is NoteOnsets"
       # Filter onsets to keep only those within [0, min_len)
       music_cropped = music.filter_onsets_in_time_range(0.0, min_len)
-    case MusingMusicIdData(_):
-      # Music IDs have no temporal extent, pass through unchanged
-      music_cropped = music
+    case MusingMusicIdData():
+      raise ValueError(
+        "prepare_trial() cannot process MusingMusicIdData (no audio). "
+        "Filter out MUSIN-G trials before calling this function."
+      )
 
   if eeg_l_freq is not None or eeg_h_freq is not None:
     eeg: BaseRaw = cast(BaseRaw, eeg.filter(l_freq=eeg_l_freq, h_freq=eeg_h_freq))
@@ -1553,7 +1552,7 @@ class StratifiedSamplingDataset(EEGMusicDataset):
 
     n_starts = int((length - self.trial_length_secs) * eeg_raw.info["sfreq"])
     new_length_samples: int = int_or_err(
-      Fraction(self.trial_length_secs * eeg_raw.info["sfreq"])
+      self.trial_length_secs * Fraction(eeg_raw.info["sfreq"])
     )
     n_starts_exact = int(eeg_raw.n_times) - new_length_samples + 1
     s_start = (n_starts * stratum_index) // self.n_strata
@@ -1579,32 +1578,28 @@ class StratifiedSamplingDataset(EEGMusicDataset):
 
     match music_obj:
       case WavRAW(raw_data, sample_rate):
-        new_length_samples_music = int_or_err(
-          Fraction(self.trial_length_secs) * sample_rate
-        )
+        new_length_samples: int = int_or_err(self.trial_length_secs * sample_rate)
         tot_m = music_obj.length_samples()
 
         random_start_music = round((tot_m * random_start) / n_starts_exact)
-        random_start_music = min(random_start_music, tot_m - new_length_samples_music)
+        random_start_music = min(random_start_music, tot_m - new_length_samples)
         return_music = WavRAW(
           raw_data=raw_data[
-            random_start_music : random_start_music + new_length_samples_music
+            random_start_music : random_start_music + new_length_samples
           ],
           sample_rate=sample_rate,
         )
 
       case MelRaw(mel, sample_rate, hop_length, fmin, fmax, to_db):
-        new_length_samples_music = int_or_err(
-          Fraction(self.trial_length_secs) * sample_rate / hop_length
+        new_length_samples: int = int_or_err(
+          self.trial_length_secs * sample_rate / hop_length
         )
         tot_m = music_obj.mel.shape[-1]
         random_start_music = round((tot_m * random_start) / n_starts_exact)
-        random_start_music = min(random_start_music, tot_m - new_length_samples_music)
+        random_start_music = min(random_start_music, tot_m - new_length_samples)
 
         return_music = MelRaw(
-          mel=mel[
-            :, random_start_music : random_start_music + new_length_samples_music
-          ],
+          mel=mel[:, random_start_music : random_start_music + new_length_samples],
           sample_rate=sample_rate,
           hop_length=hop_length,
           fmin=fmin,
@@ -1619,10 +1614,11 @@ class StratifiedSamplingDataset(EEGMusicDataset):
         return_music = music_obj.filter_onsets_in_time_range(
           start_time_sec, end_time_sec
         )
-
-      case MusingMusicIdData(_):
-        # Music IDs have no temporal extent, pass through unchanged
-        return_music = music_obj
+      case MusingMusicIdData():
+        raise ValueError(
+          "StratifiedSamplingDataset cannot process MusingMusicIdData (no audio). "
+          "Filter out MUSIN-G trials before using this dataset."
+        )
 
     trial: TrialData[EegData, MusicData] = TrialData(
       dataset=trial.dataset,
@@ -1692,7 +1688,7 @@ class ArrayStratifiedSamplingDataset(EEGMusicDataset):
 
     # Calculate stratified sampling bounds
     n_starts = int((e_len - self.trial_length_secs) * sfreq)
-    new_length_samples = int_or_err(Fraction(self.trial_length_secs * sfreq))
+    new_length_samples = int_or_err(self.trial_length_secs * Fraction(sfreq))
     n_starts_exact = array_eeg.data.shape[1] - new_length_samples + 1
 
     s_start = (n_starts * stratum_index) // self.n_strata
@@ -1707,9 +1703,7 @@ class ArrayStratifiedSamplingDataset(EEGMusicDataset):
     music_obj = trial.music_data.get_music()
     match music_obj:
       case WavRAW(raw_data, sample_rate):
-        new_length_samples_music = int_or_err(
-          Fraction(self.trial_length_secs) * sample_rate
-        )
+        new_length_samples_music = int_or_err(self.trial_length_secs * sample_rate)
         tot_m = music_obj.length_samples()
         random_start_music = round((tot_m * random_start) / n_starts_exact)
         random_start_music = min(random_start_music, tot_m - new_length_samples_music)
@@ -1722,7 +1716,7 @@ class ArrayStratifiedSamplingDataset(EEGMusicDataset):
 
       case MelRaw(mel, sample_rate, hop_length, fmin, fmax, to_db):
         new_length_samples_music = int_or_err(
-          Fraction(self.trial_length_secs) * sample_rate / hop_length
+          self.trial_length_secs * sample_rate / hop_length
         )
         tot_m = music_obj.mel.shape[-1]
         random_start_music = round((tot_m * random_start) / n_starts_exact)
@@ -1744,10 +1738,11 @@ class ArrayStratifiedSamplingDataset(EEGMusicDataset):
         return_music = music_obj.filter_onsets_in_time_range(
           start_time_sec, end_time_sec
         )
-
-      case MusingMusicIdData(_):
-        # Music IDs have no temporal extent, pass through unchanged
-        return_music = music_obj
+      case MusingMusicIdData():
+        raise ValueError(
+          "ArrayStratifiedSamplingDataset cannot process MusingMusicIdData (no audio). "
+          "Filter out MUSIN-G trials before using this dataset."
+        )
 
     # Return trial with trimmed EEG and trimmed music
     return TrialData(
