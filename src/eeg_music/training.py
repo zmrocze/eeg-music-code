@@ -697,8 +697,12 @@ class NoteOnsetsTraining(MainTraining):
     if self.config.ds_split_type == TrialWiseSplit:
       assert self.dataloaders["num_skipped_trials"] == 0
 
-  def create_model(self):
-    """Create EEGNet model, loading from checkpoint if available."""
+  def create_model_aux(self, lightning_class):
+    """Create model using the specified Lightning class, loading from checkpoint if available.
+
+    Args:
+        lightning_class: The Lightning module class to instantiate (e.g., EEGNetLightning)
+    """
     # Get mapper from dataloaders if subject-specific preprocessing is enabled
     mapper = (
       self.dataloaders.get("mapper")
@@ -712,7 +716,7 @@ class NoteOnsetsTraining(MainTraining):
       run = wandb.init()
       artifact = run.use_artifact(self.config.wandb_checkpoint, type="model")
       artifact_dir = artifact.download()
-      self.model = EEGNetLightning.load_from_checkpoint(
+      self.model = lightning_class.load_from_checkpoint(
         artifact_dir + "/model.ckpt",
         config=self.config.model_config,
         subject_mapper=mapper,
@@ -722,7 +726,7 @@ class NoteOnsetsTraining(MainTraining):
     ):
       # Load from local checkpoint
       print(f"Loading model from checkpoint: {self.config.checkpoint_path}")
-      self.model = EEGNetLightning.load_from_checkpoint(
+      self.model = lightning_class.load_from_checkpoint(
         self.config.checkpoint_path,
         config=self.config.model_config,
         subject_mapper=mapper,
@@ -731,8 +735,12 @@ class NoteOnsetsTraining(MainTraining):
       # Create fresh model
       if self.config.checkpoint_path is not None:
         print(f"Checkpoint path specified but not found: {self.config.checkpoint_path}")
-      print("Creating fresh EEGNet model")
-      self.model = EEGNetLightning(self.config.model_config, subject_mapper=mapper)
+      print(f"Creating fresh {lightning_class.__name__} model")
+      self.model = lightning_class(self.config.model_config, subject_mapper=mapper)
+
+  def create_model(self):
+    """Create EEGNet model, loading from checkpoint if available."""
+    self.create_model_aux(EEGNetLightning)
 
   def log_hyperparameters(self):
     """Log EEGNet-specific hyperparameters to wandb."""

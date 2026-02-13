@@ -6,7 +6,6 @@ It extends the note onset detection framework to handle multi-class classificati
 
 import torch
 import torch.nn as nn
-import wandb
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional, Union
@@ -436,43 +435,7 @@ class EmotionEEGNetTraining(NoteOnsetsTraining):
 
   def create_model(self):
     """Create EmotionEEGNetLightning model."""
-    # Get mapper from dataloaders if subject-specific preprocessing is enabled
-    mapper = (
-      self.dataloaders.get("mapper")
-      if self.config.model_config.use_subject_specific
-      else None
-    )
-
-    if self.config.wandb_checkpoint is not None:
-      # Load from wandb checkpoint (takes priority)
-      print(f"Loading model from wandb checkpoint: {self.config.wandb_checkpoint}")
-      run = wandb.init()
-      artifact = run.use_artifact(self.config.wandb_checkpoint, type="model")
-      artifact_dir = artifact.download()
-      self.model = EmotionEEGNetLightning.load_from_checkpoint(
-        artifact_dir + "/model.ckpt",
-        config=self.config.model_config,
-        subject_mapper=mapper,
-      )
-    elif (
-      self.config.checkpoint_path is not None and self.config.checkpoint_path.exists()
-    ):
-      # Load from local checkpoint
-      print(f"Loading model from checkpoint: {self.config.checkpoint_path}")
-      self.model = EmotionEEGNetLightning.load_from_checkpoint(
-        self.config.checkpoint_path,
-        config=self.config.model_config,
-        subject_mapper=mapper,
-      )
-    else:
-      # Create fresh model
-      if self.config.checkpoint_path is not None:
-        print(f"Checkpoint path specified but not found: {self.config.checkpoint_path}")
-      print("Creating fresh EmotionEEGNetLightning model")
-      self.model = EmotionEEGNetLightning(
-        self.config.model_config,
-        subject_mapper=mapper,
-      )
+    self.create_model_aux(EmotionEEGNetLightning)
 
   def create_callbacks(self):
     """Create callbacks for emotion classification training.
@@ -557,40 +520,89 @@ class BinaryEmotionEEGNetTraining(EmotionEEGNetTraining):
 
   def create_model(self):
     """Create BinaryEmotionEEGNetLightning model."""
-    # Get mapper from dataloaders if subject-specific preprocessing is enabled
-    mapper = (
-      self.dataloaders.get("mapper")
-      if self.config.model_config.use_subject_specific
-      else None
+    self.create_model_aux(BinaryEmotionEEGNetLightning)
+
+
+class MusingEEGNetLightning(EmotionEEGNetLightning):
+  """Lightning module for MUSING dataset song classification (12 songs).
+
+  Inherits from EmotionEEGNetLightning but overrides _compute_loss to extract
+  song IDs from MusingMusicIdData objects instead of emotion codes.
+  """
+
+  def _compute_loss(self, batch, batch_idx, stage: str):
+    """Compute loss for a batch.
+
+    Args:
+        batch: Dictionary with keys:
+            - 'eeg': (batch, channels, timepoints)
+            - 'music': List of MusingMusicIdData objects
+            - 'info': Dict with dataset and subject info
+        batch_idx: Batch index
+        stage: 'train', 'val', or 'test'
+
+    Returns:
+        loss: Computed loss value
+    """
+
+    eeg = batch["eeg"]
+    music_data = batch["music"]  # List of MusingMusicIdData objects
+    batch_size = eeg.shape[0]
+
+    # Extract song IDs from MusingMusicIdData objects (1-12)
+    # Convert to class indices (0-11) for CrossEntropyLoss
+    targets = torch.tensor(
+      [music.music_id.song_id - 1 for music in music_data],
+      dtype=torch.long,
+      device=eeg.device,
     )
 
-    if self.config.wandb_checkpoint is not None:
-      # Load from wandb checkpoint (takes priority)
-      print(f"Loading model from wandb checkpoint: {self.config.wandb_checkpoint}")
-      run = wandb.init()
-      artifact = run.use_artifact(self.config.wandb_checkpoint, type="model")
-      artifact_dir = artifact.download()
-      self.model = BinaryEmotionEEGNetLightning.load_from_checkpoint(
-        artifact_dir + "/model.ckpt",
-        config=self.config.model_config,
-        subject_mapper=mapper,
+    # Get subject IDs if using subject-specific preprocessing
+    subject_ids = None
+    if self.subject_mapper is not None:
+      info = batch["info"]
+      subject_ids = torch.tensor(
+        [
+          self.subject_mapper.get_id(info["dataset"][i], info["subject"][i])
+          for i in range(len(info["dataset"]))
+        ],
+        device=eeg.device,
       )
-    elif (
-      self.config.checkpoint_path is not None and self.config.checkpoint_path.exists()
-    ):
-      # Load from local checkpoint
-      print(f"Loading model from checkpoint: {self.config.checkpoint_path}")
-      self.model = BinaryEmotionEEGNetLightning.load_from_checkpoint(
-        self.config.checkpoint_path,
-        config=self.config.model_config,
-        subject_mapper=mapper,
-      )
-    else:
-      # Create fresh model
-      if self.config.checkpoint_path is not None:
-        print(f"Checkpoint path specified but not found: {self.config.checkpoint_path}")
-      print("Creating fresh BinaryEmotionEEGNetLightning model")
-      self.model = BinaryEmotionEEGNetLightning(
-        self.config.model_config,
-        subject_mapper=mapper,
-      )
+
+    # Forward pass
+    logits = self(eeg, subject_ids)
+
+    # Compute loss
+    loss = self.loss_fn(logits, targets)
+
+    # Update metrics
+    if stage == "train":
+      self.train_metrics.update(logits.detach(), targets)
+    elif stage == "val":
+      self.val_metrics.update(logits.detach(), targets)
+    elif stage == "test":
+      self.test_metrics.update(logits.detach(), targets)
+
+    # Log loss
+    self.log(
+      f"{stage}_loss",
+      loss,
+      on_step=True,
+      on_epoch=True,
+      prog_bar=True,
+      batch_size=batch_size,
+    )
+
+    return loss
+
+
+class MusingEEGNetTraining(EmotionEEGNetTraining):
+  """Training class for MUSING dataset song classification.
+
+  Inherits from EmotionEEGNetTraining but uses MusingEEGNetLightning
+  which classifies based on song IDs (1-12) from MusingMusicIdData.
+  """
+
+  def create_model(self):
+    """Create MusingEEGNetLightning model."""
+    self.create_model_aux(MusingEEGNetLightning)

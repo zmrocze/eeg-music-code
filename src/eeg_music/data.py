@@ -244,10 +244,7 @@ class MusingMusicIdData(MusicData):
 
   def length_seconds(self) -> float:
     """MusingMusicIdData has no audio, so length is not available."""
-    raise NotImplementedError(
-      "MusingMusicIdData doesn't contain audio data. "
-      "Use filter to exclude MUSIN-G trials before operations requiring audio length."
-    )
+    return float("inf")
 
   def save(self, filepath: Path) -> None:
     """Save the music ID to a JSON file."""
@@ -1281,7 +1278,7 @@ def prepare_trial(
   # remove_channels: Optional[List[str]] = None,
   pick_channels: Optional[List[str]] = None,
   max_len: Optional[float] = None,
-) -> TrialData[RawEeg, WavRAW | MelRaw | NoteOnsets]:
+) -> TrialData[RawEeg, WavRAW | MelRaw | NoteOnsets | MusingMusicIdData]:
   """Set common length between music and eeg, resample eeg and filter eeg, transform music to mel spectrogram.
 
   Optional music resampling, applied before mel transform if any.
@@ -1308,7 +1305,9 @@ def prepare_trial(
         wav = wav.resampled(new_sr=wav_resample)
         raw, sr = wav.raw_data, wav.sample_rate
       max_samples = int(min_len * sr)
-      music_cropped: WavRAW | MelRaw | NoteOnsets = WavRAW(raw[:max_samples], sr)
+      music_cropped: WavRAW | MelRaw | NoteOnsets | MusingMusicIdData = WavRAW(
+        raw[:max_samples], sr
+      )
       # (optional) apply mel transform could go here if apply_mel is not None
       if apply_mel is not None:
         music_cropped = wavraw_to_melspectrogram(music_cropped, **apply_mel.as_kwargs())
@@ -1327,10 +1326,12 @@ def prepare_trial(
       # Filter onsets to keep only those within [0, min_len)
       music_cropped = music.filter_onsets_in_time_range(0.0, min_len)
     case MusingMusicIdData():
-      raise ValueError(
-        "prepare_trial() cannot process MusingMusicIdData (no audio). "
-        "Filter out MUSIN-G trials before calling this function."
-      )
+      assert apply_mel is None, "Can't apply_mel if the input is MusingMusicIdData"
+      music_cropped = music
+      # raise ValueError(
+      #   "prepare_trial() cannot process MusingMusicIdData (no audio). "
+      #   "Filter out MUSIN-G trials before calling this function."
+      # )
 
   if eeg_l_freq is not None or eeg_h_freq is not None:
     eeg: BaseRaw = cast(BaseRaw, eeg.filter(l_freq=eeg_l_freq, h_freq=eeg_h_freq))
@@ -1739,10 +1740,7 @@ class ArrayStratifiedSamplingDataset(EEGMusicDataset):
           start_time_sec, end_time_sec
         )
       case MusingMusicIdData():
-        raise ValueError(
-          "ArrayStratifiedSamplingDataset cannot process MusingMusicIdData (no audio). "
-          "Filter out MUSIN-G trials before using this dataset."
-        )
+        return_music = music_obj
 
     # Return trial with trimmed EEG and trimmed music
     return TrialData(

@@ -19,7 +19,7 @@ def test_binary_emotion_eegnet_compute_loss():
     chunk_width=256,
     num_channels=28,
     eeg_sample_rate=256,
-    num_classes=2,  # Binary classification
+    num_classes=1,  # Binary classification with single logit
     median_num_noteonsets=35,
   )
 
@@ -70,7 +70,7 @@ def test_binary_emotion_eegnet_threshold_boundary():
     chunk_width=256,
     num_channels=28,
     eeg_sample_rate=256,
-    num_classes=2,
+    num_classes=1,  # Binary classification with single logit
     median_num_noteonsets=10,  # Use smaller threshold for testing
   )
 
@@ -112,7 +112,7 @@ def test_binary_emotion_eegnet_forward():
     chunk_width=256,
     num_channels=28,
     eeg_sample_rate=256,
-    num_classes=2,
+    num_classes=1,  # Binary classification with single logit
     median_num_noteonsets=35,
   )
 
@@ -124,8 +124,8 @@ def test_binary_emotion_eegnet_forward():
   # Forward pass
   output = model(eeg)
 
-  # Check output shape: (batch_size, num_classes)
-  assert output.shape == (batch_size, 2)
+  # Check output shape: (batch_size,) for single logit
+  assert output.shape == (batch_size,)
 
 
 def test_binary_emotion_eegnet_training_create_model():
@@ -136,7 +136,7 @@ def test_binary_emotion_eegnet_training_create_model():
       chunk_width=256,
       num_channels=28,
       eeg_sample_rate=256,
-      num_classes=2,
+      num_classes=1,  # Binary classification with single logit
       median_num_noteonsets=35,
     )
   )
@@ -151,5 +151,5 @@ def test_binary_emotion_eegnet_training_create_model():
 
   # Verify that the model is BinaryEmotionEEGNetLightning
   assert isinstance(training.model, BinaryEmotionEEGNetLightning)
-  assert training.model.config.num_classes == 2
+  assert training.model.config.num_classes == 1
   assert training.model.config.median_num_noteonsets == 35
