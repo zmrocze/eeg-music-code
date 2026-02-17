@@ -1966,3 +1966,71 @@ def mkplot_melspectrogram(
   )
   # plt.show()
   return fig
+
+
+def temporal_train_test_split(
+  ds: EEGMusicDataset, length_sec: Fraction
+) -> tuple[EEGMusicDataset, EEGMusicDataset]:
+  """Split each trial temporally into a train prefix and test suffix.
+
+  Parameters
+  ----------
+  ds : EEGMusicDataset
+      Dataset with ArrayEeg or OnDiskArrayEeg eeg_data.
+  length_sec : Fraction
+      Length in seconds of the train (prefix) portion.
+
+  Returns
+  -------
+  (train_ds, test_ds) : tuple[EEGMusicDataset, EEGMusicDataset]
+      Train contains the first ``length_sec`` seconds, test the remainder.
+      Music data and metadata are preserved in both.
+  """
+  train_rows: list[dict] = []
+  test_rows: list[dict] = []
+
+  for i in range(len(ds)):
+    trial = ds[i]
+    arr = trial.eeg_data.get_array()  # type: ignore[reportUnknownMemberType]
+    split_sample = int_or_err(length_sec * Fraction(int(arr.sfreq)))
+    if split_sample >= arr.data.shape[1]:
+      raise ValueError("temporal_train_test_split: too short")
+
+    base = {
+      "dataset": trial.dataset,
+      "subject": trial.subject,
+      "session": trial.session,
+      "run": trial.run,
+      "trial_id": trial.trial_id,
+      "music_filename": trial.music_filename,
+    }
+    train_rows.append(
+      {
+        **base,
+        "eeg_data": ArrayEeg(
+          data=arr.data[:, :split_sample],
+          ch_names=arr.ch_names,
+          sfreq=arr.sfreq,
+        ),
+      }
+    )
+    test_rows.append(
+      {
+        **base,
+        "eeg_data": ArrayEeg(
+          data=arr.data[:, split_sample:],
+          ch_names=arr.ch_names,
+          sfreq=arr.sfreq,
+        ),
+      }
+    )
+
+  train_ds = EEGMusicDataset()
+  train_ds.df = pd.DataFrame(train_rows)
+  train_ds.music_collection = dict(ds.music_collection)
+
+  test_ds = EEGMusicDataset()
+  test_ds.df = pd.DataFrame(test_rows)
+  test_ds.music_collection = dict(ds.music_collection)
+
+  return train_ds, test_ds
