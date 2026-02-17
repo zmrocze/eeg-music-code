@@ -79,17 +79,18 @@ def plot_trial_data(trial_data: TrialData[RawEeg, Union[WavRAW, MelRaw]]) -> Tri
 
 
 def plot_band_power_with_onsets(
-  trial_data: TrialData[ArrayEeg, NoteOnsets], title: str = "Band Power Analysis"
+  trial_data: TrialData[ArrayEeg, Union[WavRAW, MelRaw, NoteOnsets]],
+  title: str = "Band Power Analysis",
 ) -> mfig.Figure:
   """
-  Create a 2D image plot of band power data from EEG with note onsets overlaid as dotted lines.
+  Create a 2D image plot of band power data from EEG with optional note onsets overlaid as dotted lines.
 
   Args:
-      trial_data: TrialData containing ArrayEeg (band power data) and NoteOnsets
+      trial_data: TrialData containing ArrayEeg (band power data) and any music data type
       title: Title for the plot
 
   Returns:
-      Matplotlib figure containing the band power plot with onset lines
+      Matplotlib figure containing the band power plot with onset lines (if music data is NoteOnsets)
   """
   # Extract EEG data
   eeg = trial_data.eeg_data
@@ -97,8 +98,8 @@ def plot_band_power_with_onsets(
   sfreq = eeg.sfreq  # Effective sampling rate after windowing
   channel_names = eeg.ch_names
 
-  # Get note onsets
-  onsets = trial_data.music_data.get_music().onset_times
+  # Get music data
+  music = trial_data.music_data.get_music()
 
   # Create figure and axis
   fig, ax = plt.subplots(figsize=(12, 8))
@@ -129,10 +130,11 @@ def plot_band_power_with_onsets(
   ax.set_ylabel("Channel / Band")
   ax.set_title(title if title else f"Band Power - {trial_data.trial_id}")
 
-  # Overlay note onsets as dotted lines
-  for onset_time in onsets:
-    if 0 <= onset_time <= duration:
-      ax.axvline(x=onset_time, color="white", linestyle=":", alpha=0.5, linewidth=1)
+  # Overlay note onsets as dotted lines (only if music data is NoteOnsets)
+  if isinstance(music, NoteOnsets):
+    for onset_time in music.onset_times:
+      if 0 <= onset_time <= duration:
+        ax.axvline(x=onset_time, color="white", linestyle=":", alpha=0.5, linewidth=1)
 
   # Adjust layout to prevent label cutoff
   plt.tight_layout()
