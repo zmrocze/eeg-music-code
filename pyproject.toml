@@ -41,6 +41,7 @@ dependencies = [
   "seaborn",
   "scikit-learn",
   "py-ssa-lib",
+  "xgboost",
 
   "eegpt",
 ]
