@@ -587,6 +587,7 @@ dependencies = [
     { name = "braindecode" },
     { name = "eegpt" },
     { name = "essentia" },
+    { name = "fastdtw" },
     { name = "ipykernel" },
     { name = "ipython" },
     { name = "jupyter" },
@@ -616,6 +617,7 @@ dependencies = [
     { name = "torch" },
     { name = "torcheeg" },
     { name = "transformers" },
+    { name = "tslearn" },
     { name = "wandb" },
     { name = "xgboost" },
 ]
@@ -631,6 +633,7 @@ requires-dist = [
     { name = "braindecode" },
     { name = "eegpt", directory = "submodules/EEGPT" },
     { name = "essentia" },
+    { name = "fastdtw" },
     { name = "ipykernel" },
     { name = "ipython" },
     { name = "jupyter" },
@@ -662,6 +665,7 @@ requires-dist = [
     { name = "torch" },
     { name = "torcheeg" },
     { name = "transformers" },
+    { name = "tslearn" },
     { name = "wandb" },
     { name = "xgboost" },
 ]
@@ -738,6 +742,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/fb/48/f08f264da34cf160d
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/23/dfb161e91db7c92727db505dc72a384ee79681fe0603f706f9f9f52c2901/fastapi-0.121.2-py3-none-any.whl", hash = "sha256:f2d80b49a86a846b70cc3a03eb5ea6ad2939298bf6a7fe377aa9cd3dd079d358", size = 109201, upload-time = "2025-11-13T17:05:52.718Z" },
 ]
+
+[[package]]
+name = "fastdtw"
+version = "0.3.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/99/43/30f2d8db076f216b15c10db663b46e22d1750b1ebacd7af6e62b83d6ab98/fastdtw-0.3.4.tar.gz", hash = "sha256:2350fa6ec36bcad186eaf81f46eff35181baf04e324f522de8aeb43d0243f64f", size = 133402, upload-time = "2019-10-07T16:02:29.982Z" }
 
 [[package]]
 name = "fastjsonschema"
@@ -3482,6 +3495,22 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/66/b1eb52839f563623d185f0927eb3530ee4d5ffe9d377cdaf5346b306689e/triton-3.4.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:31c1d84a5c0ec2c0f8e8a072d7fd150cab84a9c239eaddc6706c081bfae4eb04", size = 155560068, upload-time = "2025-07-30T19:58:37.081Z" },
+]
+
+[[package]]
+name = "tslearn"
+version = "0.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "joblib" },
+    { name = "numba" },
+    { name = "numpy" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b5/f0/6324c89636f1b130ba94149091539788745102386ff8964ab5c9442c449b/tslearn-0.8.0.tar.gz", hash = "sha256:ee911b851859e0a3fe17ceba2bb3263e5ddafd7e581f41f6570c90339f2cf582", size = 9602065, upload-time = "2026-02-19T09:09:05.784Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1c/6c/366727503b862f391e89f8a8179580fffa65a260bc448ec44392e763f2d8/tslearn-0.8.0-py3-none-any.whl", hash = "sha256:2320f428e6e41c59f5ea695ae062147d58fc755b9b0131cff49181b76d62f2d3", size = 387878, upload-time = "2026-02-19T09:09:03.217Z" },
 ]
 
 [[package]]

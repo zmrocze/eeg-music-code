@@ -66,3 +66,56 @@ loss music B
 3. Basic model: UNet/Diffwave on 0.1-1s chunks training.
 4. model: EEGpt finetuned to generate spectrograms
 5. Checkpointing. Evalution by ssim.
+
+
+## plan update
+
+1. Eksperyment ze zmienianą długością próbki: noteonsets.
+
+2. Eksperyment ze zmienianą długością próbki: emotion.
+
+3. 
+
+
+## plan if sleep
+
+1. experiment window length
+
+2. experiment models
+
+both? "use of neural nets in eeg classification"
+
+
+1. neural nets
+
+ - eegnet
+ - attention
+ - tsception
+
+2. eeg
+ 
+ - physics
+ - history of use
+ - datasets
+  * sleep edf
+  * music
+
+3. experiment
+ - eeg music
+
+
+## plan svm
+
+przetestowane:
+ - [x] ✅ musing prefix-suffix-split single-subject songid-prediction train_musing_baseline.ipynb
+ - [x] ✅ bcmi-training prefix-suffix-split single-subject songid-prediction train_bcmi_baseline.ipynb
+ - [x] ❌ bcmi-training trial-split single-subject noteonsets-prediction train_bcmi_notonsets.ipynb
+ - [x] ❌ bcmi-training trial-split single-subject emotion-prediction train_bcmi_emotion.ipynb
+ - [x] ✅❌ Negatywny eksperyment DTW: musing prefix-infix-suffix-split single-subject songid-prediction
+ - [x] ✅ 16% acc musing subject-split songid-prediction
+
+## todo 
+
+ - balanced (emotion wise) trial split
+ - neural nets on musing subject-split songid-prediction: preliminary got 0.16500000655651093
+ - calculate f1 score in multi class
