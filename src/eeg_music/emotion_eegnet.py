@@ -32,6 +32,7 @@ from lightning.pytorch.callbacks.lr_finder import LearningRateFinder
 from .dataloader import (
   TrialWiseSplit,
   create_collate_fn,
+  create_dataloader,
   create_dataloaders_but_with_normalization,
 )
 
@@ -602,6 +603,49 @@ class MusingEEGNetTraining(EmotionEEGNetTraining):
   Inherits from EmotionEEGNetTraining but uses MusingEEGNetLightning
   which classifies based on song IDs (1-12) from MusingMusicIdData.
   """
+
+  def __init__(self, config: EmotionEEGNetTrainingConfig, train_ds, test_ds):
+    super().__init__(config)
+    self._train_ds = train_ds
+    self._test_ds = test_ds
+
+  def create_dataloaders(self):
+    collate_fn = create_collate_fn(
+      include_info=self.config.include_info,
+      music_batch_fn=lambda x: x,
+      eeg_batch_fn=lambda x: torch.stack(
+        [torch.from_numpy(a.get_array().data) for a in x]  # pyright: ignore[reportAttributeAccessIssue]
+      ),
+    )
+    self.dataloaders = {
+      "train": create_dataloader(
+        self._train_ds,
+        batch_size=self.config.batch_size,
+        num_workers=self.config.data_loader_num_workers,
+        pin_memory=self.config.pin_memory,
+        is_training=True,
+        prefetch_factor=self.config.prefetch_factor,
+        collate_fn=collate_fn,
+      ),
+      "val": create_dataloader(
+        self._test_ds,
+        batch_size=self.config.batch_size,
+        num_workers=self.config.data_loader_num_workers,
+        pin_memory=self.config.pin_memory,
+        is_training=False,
+        prefetch_factor=self.config.prefetch_factor,
+        collate_fn=collate_fn,
+      ),
+      "test": create_dataloader(
+        self._test_ds,
+        batch_size=self.config.batch_size,
+        num_workers=self.config.data_loader_num_workers,
+        pin_memory=self.config.pin_memory,
+        is_training=False,
+        prefetch_factor=self.config.prefetch_factor,
+        collate_fn=collate_fn,
+      ),
+    }
 
   def create_model(self):
     """Create MusingEEGNetLightning model."""
