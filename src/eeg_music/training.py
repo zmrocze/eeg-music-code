@@ -608,6 +608,17 @@ class MainTraining:
       self.model,
       dataloaders=self.dataloaders["test"],
     )
+    for ckpt_cb in (cb for cb in self.callbacks if isinstance(cb, ModelCheckpoint)):
+      best_path = ckpt_cb.best_model_path
+      if best_path and Path(best_path).exists():
+        print(f"Testing best checkpoint ({ckpt_cb.monitor}): {best_path}")
+        self.trainer.test(
+          self.model,
+          dataloaders=self.dataloaders["test"],
+          ckpt_path=best_path,
+        )
+      elif best_path:
+        print(f"Best checkpoint ({ckpt_cb.monitor}) not found, skipping: {best_path}")
 
   def run(self):
     self.create_dataloaders()
