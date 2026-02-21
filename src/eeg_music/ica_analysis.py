@@ -150,3 +150,74 @@ def ica_band_power_trial(
     trial,
     eeg_data=ArrayEeg(data=flat, ch_names=ch_names, sfreq=1.0 / hop_sec),
   )
+
+
+_NON_EEG_CHANNELS = frozenset({"GSR", "ECG", "VA1", "VA2", "VAtarg"})
+
+
+def _prepare_raw_1020(
+  raw: mne.io.BaseRaw, l_freq: float, h_freq: float
+) -> mne.io.BaseRaw:
+  """Filter, drop non-EEG channels, fix casing, and set standard_1020 montage."""
+  raw = raw.copy()
+  raw.filter(l_freq=l_freq, h_freq=h_freq, verbose=False)
+  raw.drop_channels([ch for ch in raw.ch_names if ch in _NON_EEG_CHANNELS])
+  # BCMI training uses FP1/FPz but standard_1020 expects Fp1/Fpz
+  montage = mne.channels.make_standard_montage("standard_1020")
+  montage_upper = {name.upper(): name for name in montage.ch_names}
+  raw.rename_channels(
+    {
+      ch: montage_upper[ch.upper()]
+      for ch in raw.ch_names
+      if ch.upper() in montage_upper and ch != montage_upper[ch.upper()]
+    }
+  )
+  raw.set_montage(montage, on_missing="ignore")
+  return raw
+
+
+def ica_band_power_trial_1020(
+  trial: TrialData,
+  n_components: int = 20,
+  bands: list[tuple[float, float]] | None = None,
+  window_sec: float = 2.0,
+  hop_sec: float = 1.0,
+  l_freq: float = 1.0,
+  h_freq: float = 50.0,
+  keep_labels: set[str] = {"brain", "other"},
+) -> TrialData:
+  """Like ica_band_power_trial but for datasets using standard 10-20 channel names.
+
+  Handles BCMI training data: drops non-EEG channels (GSR, ECG, VA*),
+  fixes casing (FP1→Fp1), and uses standard_1020 montage.
+  """
+  if bands is None:
+    bands = [(0.5, 4), (4, 8), (8, 13), (13, 30), (30, 45)]
+  band_names_short = (
+    ["delta", "theta", "alpha", "beta", "gamma"]
+    if len(bands) == 5
+    else [f"{lo}-{hi}" for lo, hi in bands]
+  )
+
+  raw = _prepare_raw_1020(trial.eeg_data.get_eeg().raw_eeg, l_freq, h_freq)
+
+  ica, _ = apply_ica(raw, n_components=n_components)
+  cleaned = clean_ica_artifacts(ica, raw, keep_labels=keep_labels)
+  cleaned_sources = ica.get_sources(cleaned)
+  assert isinstance(cleaned_sources, mne.io.BaseRaw)
+
+  bp, _ = windowed_band_power(
+    cleaned_sources, bands=bands, window_sec=window_sec, hop_sec=hop_sec
+  )
+  for bi in range(bp.shape[0]):
+    bmin, bmax = bp[bi].min(), bp[bi].max()
+    bp[bi] = (bp[bi] - bmin) / (bmax - bmin) if bmax > bmin else 0.0
+
+  num_bands, n_comp, num_windows = bp.shape
+  flat = bp.reshape(num_bands * n_comp, num_windows).astype(np.float32)
+  ch_names = [f"{bname}_IC{ic}" for bname in band_names_short for ic in range(n_comp)]
+
+  return replace(
+    trial,
+    eeg_data=ArrayEeg(data=flat, ch_names=ch_names, sfreq=1.0 / hop_sec),
+  )
