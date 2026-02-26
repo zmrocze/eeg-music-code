@@ -1,4 +1,5 @@
 from dataclasses import replace
+from typing import Literal
 
 import mne
 import numpy as np
@@ -8,6 +9,25 @@ from mne_icalabel import label_components
 from numpy.typing import NDArray
 
 from eeg_music.data import ArrayEeg, TrialData
+
+Normalization = Literal["minmax", "std"] | None
+
+
+def _normalize_band_power(
+  bp: NDArray[np.float64], method: Normalization
+) -> NDArray[np.float64]:
+  """Normalize band power array of shape (num_bands, n_components, num_windows) per band."""
+  if method is None:
+    return bp
+  for bi in range(bp.shape[0]):
+    bmin = bp[bi].min()
+    if method == "minmax":
+      bmax = bp[bi].max()
+      bp[bi] = (bp[bi] - bmin) / (bmax - bmin) if bmax > bmin else 0.0
+    elif method == "std":
+      mean, std = bp[bi].mean(), bp[bi].std()
+      bp[bi] = (bp[bi] - mean) / std if std > 0 else 0.0
+  return bp
 
 
 def apply_ica(
@@ -91,6 +111,7 @@ def ica_band_power_trial(
   l_freq: float = 1.0,
   h_freq: float = 50.0,
   keep_labels: set[str] = {"brain", "other"},
+  apply_normalization: Normalization = "std",
 ) -> TrialData:
   """Apply ICA artifact cleaning + band power to a trial, returning ArrayEeg output.
 
@@ -136,10 +157,7 @@ def ica_band_power_trial(
     cleaned_sources, bands=bands, window_sec=window_sec, hop_sec=hop_sec
   )
   # bp shape: (num_bands, n_kept_components, num_windows)
-  # normalize each band independently to [0, 1]
-  for bi in range(bp.shape[0]):
-    bmin, bmax = bp[bi].min(), bp[bi].max()
-    bp[bi] = (bp[bi] - bmin) / (bmax - bmin) if bmax > bmin else 0.0
+  _normalize_band_power(bp, apply_normalization)
 
   num_bands, n_comp, num_windows = bp.shape
   flat = bp.reshape(num_bands * n_comp, num_windows).astype(np.float32)
@@ -185,6 +203,7 @@ def ica_band_power_trial_1020(
   l_freq: float = 1.0,
   h_freq: float = 50.0,
   keep_labels: set[str] = {"brain", "other"},
+  apply_normalization: Normalization = "std",
 ) -> TrialData:
   """Like ica_band_power_trial but for datasets using standard 10-20 channel names.
 
@@ -209,9 +228,7 @@ def ica_band_power_trial_1020(
   bp, _ = windowed_band_power(
     cleaned_sources, bands=bands, window_sec=window_sec, hop_sec=hop_sec
   )
-  for bi in range(bp.shape[0]):
-    bmin, bmax = bp[bi].min(), bp[bi].max()
-    bp[bi] = (bp[bi] - bmin) / (bmax - bmin) if bmax > bmin else 0.0
+  _normalize_band_power(bp, apply_normalization)
 
   num_bands, n_comp, num_windows = bp.shape
   flat = bp.reshape(num_bands * n_comp, num_windows).astype(np.float32)

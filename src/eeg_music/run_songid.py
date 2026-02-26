@@ -70,12 +70,15 @@ if __name__ == "__main__":
   ds = EEGMusicDataset.load_ondisk(
     Path("./datasets/musing_preprocessed/musing_ica_8ch")
   )
-  splitted = ds.subject_wise_split(p_train=0.75, p_val=0.0)
+  splitted = ds.subject_wise_split(p_train=0.6, p_val=0.2)
   train_ds = ArrayStratifiedSamplingDataset(
     splitted["train"], 10, trial_length_secs=trial_length_secs
   )
   test_ds = ArrayStratifiedSamplingDataset(
     splitted["test"], 10, trial_length_secs=trial_length_secs
+  )
+  val_ds = ArrayStratifiedSamplingDataset(
+    splitted["val"], 10, trial_length_secs=trial_length_secs
   )
 
   config = create_config(
@@ -88,5 +91,5 @@ if __name__ == "__main__":
     median_num_noteonsets=5,
   )
 
-  training = MusingEEGNetTraining(config, train_ds, test_ds)
+  training = MusingEEGNetTraining(config, train_ds, val_ds, test_ds)
   model, trainer, dataloaders = training.run()

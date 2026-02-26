@@ -165,7 +165,7 @@ class EmotionEEGNetLightning(LightningModule):
     emotion_codes = batch["info"]["emotion"]  # List of emotion codes (1-9 or None)
     batch_size = eeg.shape[0]
 
-    print("Warning: use oneshotencoding")
+    # print("Warning: use oneshotencoding")
 
     # Convert to class indices (0-8) for CrossEntropyLoss. Subtract 1 to map 1-9 to 0-8
     targets = torch.tensor(
@@ -597,16 +597,17 @@ class MusingEEGNetLightning(EmotionEEGNetLightning):
     return loss
 
 
-class MusingEEGNetTraining(EmotionEEGNetTraining):
-  """Training class for MUSING dataset song classification.
+class PrebuiltDatasetsTraining(EmotionEEGNetTraining):
+  """Base training class for pre-built train/val/test datasets.
 
-  Inherits from EmotionEEGNetTraining but uses MusingEEGNetLightning
-  which classifies based on song IDs (1-12) from MusingMusicIdData.
+  Handles __init__ and create_dataloaders shared by subclasses that receive
+  datasets directly rather than loading from a path.
   """
 
-  def __init__(self, config: EmotionEEGNetTrainingConfig, train_ds, test_ds):
+  def __init__(self, config: EmotionEEGNetTrainingConfig, train_ds, val_ds, test_ds):
     super().__init__(config)
     self._train_ds = train_ds
+    self._val_ds = val_ds
     self._test_ds = test_ds
 
   def create_dataloaders(self):
@@ -628,7 +629,7 @@ class MusingEEGNetTraining(EmotionEEGNetTraining):
         collate_fn=collate_fn,
       ),
       "val": create_dataloader(
-        self._test_ds,
+        self._val_ds,
         batch_size=self.config.batch_size,
         num_workers=self.config.data_loader_num_workers,
         pin_memory=self.config.pin_memory,
@@ -647,6 +648,23 @@ class MusingEEGNetTraining(EmotionEEGNetTraining):
       ),
     }
 
+
+class BCMIEmotionEEGNetTraining(PrebuiltDatasetsTraining):
+  """Training class for BCMI emotion code classification.
+
+  Predicts BCMI emotion codes (1-9) from batch["info"]["emotion"].
+  Uses EmotionEEGNetLightning directly since it already reads emotion codes from batch info.
+  """
+
   def create_model(self):
-    """Create MusingEEGNetLightning model."""
+    self.create_model_aux(EmotionEEGNetLightning)
+
+
+class MusingEEGNetTraining(PrebuiltDatasetsTraining):
+  """Training class for MUSING dataset song classification.
+
+  Classifies based on song IDs (1-12) from MusingMusicIdData.
+  """
+
+  def create_model(self):
     self.create_model_aux(MusingEEGNetLightning)
