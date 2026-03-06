@@ -102,12 +102,43 @@ def windowed_band_power(
   return result, band_names
 
 
+def _ica_band_power_from_raw(
+  trial: TrialData,
+  raw: mne.io.BaseRaw,
+  bands: list[tuple[float, float]],
+  band_names_short: list[str],
+  n_components: int,
+  window_sec: float,
+  hop_sec: float,
+  keep_labels: set[str],
+  apply_normalization: Normalization,
+) -> TrialData:
+  """Shared ICA + band power pipeline given a prepared raw object."""
+  ica, _ = apply_ica(raw, n_components=n_components)
+  cleaned = clean_ica_artifacts(ica, raw, keep_labels=keep_labels)
+  cleaned_sources = ica.get_sources(cleaned)
+  assert isinstance(cleaned_sources, mne.io.BaseRaw)
+
+  bp, _ = windowed_band_power(
+    cleaned_sources, bands=bands, window_sec=window_sec, hop_sec=hop_sec
+  )
+  _normalize_band_power(bp, apply_normalization)
+
+  num_bands, n_comp, num_windows = bp.shape
+  flat = bp.reshape(num_bands * n_comp, num_windows).astype(np.float32)
+  ch_names = [f"{bname}_IC{ic}" for bname in band_names_short for ic in range(n_comp)]
+
+  return replace(
+    trial, eeg_data=ArrayEeg(data=flat, ch_names=ch_names, sfreq=1.0 / hop_sec)
+  )
+
+
 def ica_band_power_trial(
   trial: TrialData,
   n_components: int = 20,
   bands: list[tuple[float, float]] | None = None,
   window_sec: float = 2.0,
-  hop_sec: float = 1.0,
+  hop_sec: float = 0.1,
   l_freq: float = 1.0,
   h_freq: float = 50.0,
   keep_labels: set[str] = {"brain", "other"},
@@ -136,9 +167,11 @@ def ica_band_power_trial(
   """
   if bands is None:
     bands = [(0.5, 4), (4, 8), (8, 13), (13, 30), (30, 45)]
-  band_names_short = ["delta", "theta", "alpha", "beta", "gamma"]
-  if len(band_names_short) != len(bands):
-    band_names_short = [f"{lo}-{hi}" for lo, hi in bands]
+  band_names_short = (
+    ["delta", "theta", "alpha", "beta", "gamma"]
+    if len(bands) == 5
+    else [f"{lo}-{hi}" for lo, hi in bands]
+  )
 
   raw = trial.eeg_data.get_eeg().raw_eeg.copy()
   raw.filter(l_freq=l_freq, h_freq=h_freq, verbose=False)
@@ -148,25 +181,16 @@ def ica_band_power_trial(
     mne.channels.make_standard_montage("GSN-HydroCel-129"), on_missing="warn"
   )
 
-  ica, _ = apply_ica(raw, n_components=n_components)
-  cleaned = clean_ica_artifacts(ica, raw, keep_labels=keep_labels)
-  cleaned_sources = ica.get_sources(cleaned)
-  assert isinstance(cleaned_sources, mne.io.BaseRaw)
-
-  bp, _ = windowed_band_power(
-    cleaned_sources, bands=bands, window_sec=window_sec, hop_sec=hop_sec
-  )
-  # bp shape: (num_bands, n_kept_components, num_windows)
-  _normalize_band_power(bp, apply_normalization)
-
-  num_bands, n_comp, num_windows = bp.shape
-  flat = bp.reshape(num_bands * n_comp, num_windows).astype(np.float32)
-
-  ch_names = [f"{bname}_IC{ic}" for bname in band_names_short for ic in range(n_comp)]
-
-  return replace(
+  return _ica_band_power_from_raw(
     trial,
-    eeg_data=ArrayEeg(data=flat, ch_names=ch_names, sfreq=1.0 / hop_sec),
+    raw,
+    bands,
+    band_names_short,
+    n_components,
+    window_sec,
+    hop_sec,
+    keep_labels,
+    apply_normalization,
   )
 
 
@@ -220,21 +244,14 @@ def ica_band_power_trial_1020(
 
   raw = _prepare_raw_1020(trial.eeg_data.get_eeg().raw_eeg, l_freq, h_freq)
 
-  ica, _ = apply_ica(raw, n_components=n_components)
-  cleaned = clean_ica_artifacts(ica, raw, keep_labels=keep_labels)
-  cleaned_sources = ica.get_sources(cleaned)
-  assert isinstance(cleaned_sources, mne.io.BaseRaw)
-
-  bp, _ = windowed_band_power(
-    cleaned_sources, bands=bands, window_sec=window_sec, hop_sec=hop_sec
-  )
-  _normalize_band_power(bp, apply_normalization)
-
-  num_bands, n_comp, num_windows = bp.shape
-  flat = bp.reshape(num_bands * n_comp, num_windows).astype(np.float32)
-  ch_names = [f"{bname}_IC{ic}" for bname in band_names_short for ic in range(n_comp)]
-
-  return replace(
+  return _ica_band_power_from_raw(
     trial,
-    eeg_data=ArrayEeg(data=flat, ch_names=ch_names, sfreq=1.0 / hop_sec),
+    raw,
+    bands,
+    band_names_short,
+    n_components,
+    window_sec,
+    hop_sec,
+    keep_labels,
+    apply_normalization,
   )
