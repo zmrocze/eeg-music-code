@@ -119,3 +119,93 @@ przetestowane:
  - balanced (emotion wise) trial split
  - neural nets on musing subject-split songid-prediction: preliminary got 0.16500000655651093
  - calculate f1 score in multi class
+
+## tytuły
+
+"Classification/Prediction of listened music tempo from EEG signal"
+"Classification of listened music from eeg signal"
+"Prediction of listened music features from eeg signal"
+
+"Prediction tasks with EEG signal"
+
+""
+
+## plan magisterki
+
+### wstep o eeg
+
+argumenty medyczno fizjologiczne dlaczego to słaby sygnał. co da sie wyłuskać a co trudno.
+
+#### jak zbierane
+
+#### do czego przysłużyło się w badaniach, historia
+
+#### bcmi - opis datasetu
+
+#### musing - opis datasetu
+
+#### ...
+
+### metody
+
+#### xgboost, knn, svm
+
+#### neural nets
+
+#### dtw
+
+### zadania
+
+#### predykcja piosenki
+
+##### musing
+
+###### sukces 16%
+
+###### dtw
+
+###### bcmi
+
+#### noteonsets
+
+##### single subj 53%
+reszta fail
+
+#### emotion codes
+
+❌
+
+### podsumowanie
+
+
+
+
+
+
+
+
+
+
+
+
+a co z:
+ - pretrained eeg
+ - [ ] test, validation, repeating - czy mam dobrze?
+ - dokładne accuracy czy przybliżone
+ - hydra-net a subject-specific
+ - 
+
+pytanie:
+ - jak ustalić że wynik jest statystycznie istotny. jak ustalić że jest failem
+
+
+eksperymenty:
+ - liczba ica components
+ - ica vs raw eeg
+ - [ ] stratified sampling usefulness
+ - [ ] varying length, discussion vs pandey
+
+ - loudness?
+
+faile:
+ - 

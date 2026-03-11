@@ -1449,6 +1449,59 @@ def std_normalize_trial_per_channel(trial):
   )
 
 
+def std_normalize_trial_channels(trial):
+  xx = trial.eeg_data.get_array().data
+  mean = np.mean(xx, keepdims=True).astype(np.float32)
+  std = np.std(xx, keepdims=True).astype(np.float32)
+  yy = (xx - mean) / std
+  return TrialData(
+    dataset=trial.dataset,
+    subject=trial.subject,
+    session=trial.session,
+    run=trial.run,
+    trial_id=trial.trial_id,
+    music_filename=trial.music_filename,
+    eeg_data=ArrayEeg(yy, trial.eeg_data.ch_names, trial.eeg_data.sfreq),
+    music_data=trial.music_data,
+  )
+
+
+def filter_trial(
+  trial: TrialData[EegData, MusicData], l_freq: Optional[float], h_freq: Optional[float]
+) -> TrialData[EegData, MusicData]:
+  """Apply bandpass filter to trial's EEG data."""
+  eeg = trial.eeg_data.get_eeg().raw_eeg.copy()
+  eeg.filter(l_freq=l_freq, h_freq=h_freq, verbose="error")
+  return TrialData(
+    dataset=trial.dataset,
+    subject=trial.subject,
+    session=trial.session,
+    run=trial.run,
+    trial_id=trial.trial_id,
+    music_filename=trial.music_filename,
+    music_data=trial.music_data,
+    eeg_data=RawEeg(eeg),
+  )
+
+
+def notch_filter_trial(
+  trial: TrialData[EegData, MusicData], notch_freq: float
+) -> TrialData[EegData, MusicData]:
+  """Apply notch filter to trial's EEG data."""
+  eeg = trial.eeg_data.get_eeg().raw_eeg.copy()
+  eeg.notch_filter(freqs=notch_freq, verbose="error")
+  return TrialData(
+    dataset=trial.dataset,
+    subject=trial.subject,
+    session=trial.session,
+    run=trial.run,
+    trial_id=trial.trial_id,
+    music_filename=trial.music_filename,
+    music_data=trial.music_data,
+    eeg_data=RawEeg(eeg),
+  )
+
+
 class MappedDataset(EEGMusicDataset):
   """Dataset with a mapping function applied to each trial on access."""
 

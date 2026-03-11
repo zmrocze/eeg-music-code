@@ -8,7 +8,7 @@ from mne.time_frequency import psd_array_welch
 from mne_icalabel import label_components
 from numpy.typing import NDArray
 
-from eeg_music.data import ArrayEeg, TrialData
+from eeg_music.data import ArrayEeg, RawEeg, TrialData
 
 Normalization = Literal["minmax", "std"] | None
 
@@ -41,12 +41,12 @@ def apply_ica(
   return ica, sources
 
 
-def clean_ica_artifacts(
+def label_ica_components(
   ica: ICA,
   raw: mne.io.BaseRaw,
   keep_labels: set[str] = {"brain", "other"},
-) -> mne.io.BaseRaw:
-  """Label ICA components with ICLabel, exclude non-brain artifacts, and return cleaned raw.
+) -> list[int]:
+  """Label ICA components with ICLabel and return indices to exclude.
 
   Parameters
   ----------
@@ -56,15 +56,19 @@ def clean_ica_artifacts(
 
   Returns
   -------
-  cleaned : Raw with artifact components removed
+  exclude : list of component indices classified as artifacts
   """
-  labels = label_components(raw, ica, method="iclabel")
-  component_labels = labels["labels"]
+  component_labels = label_components(raw, ica, method="iclabel")["labels"]
+  return [i for i, lbl in enumerate(component_labels) if lbl not in keep_labels]
 
-  exclude = [i for i, lbl in enumerate(component_labels) if lbl not in keep_labels]
-  #   excluded_labels = [component_labels[i] for i in exclude]
 
-  ica.exclude = exclude
+def clean_ica_artifacts(
+  ica: ICA,
+  raw: mne.io.BaseRaw,
+  keep_labels: set[str] = {"brain", "other"},
+) -> mne.io.BaseRaw:
+  """Label ICA components with ICLabel, exclude non-brain artifacts, and return cleaned raw."""
+  ica.exclude = label_ica_components(ica, raw, keep_labels)
   return ica.apply(raw.copy())
 
 
@@ -102,107 +106,114 @@ def windowed_band_power(
   return result, band_names
 
 
-def _ica_band_power_from_raw(
+def ica_clean_trial(
   trial: TrialData,
   raw: mne.io.BaseRaw,
-  bands: list[tuple[float, float]],
-  band_names_short: list[str],
-  n_components: int,
-  window_sec: float,
-  hop_sec: float,
+  return_n_components: int,
   keep_labels: set[str],
-  apply_normalization: Normalization,
 ) -> TrialData:
-  """Shared ICA + band power pipeline given a prepared raw object."""
-  ica, _ = apply_ica(raw, n_components=n_components)
-  cleaned = clean_ica_artifacts(ica, raw, keep_labels=keep_labels)
-  cleaned_sources = ica.get_sources(cleaned)
-  assert isinstance(cleaned_sources, mne.io.BaseRaw)
+  """Fit ICA on all channels, label via ICLabel, return top non-artifact sources.
 
-  bp, _ = windowed_band_power(
-    cleaned_sources, bands=bands, window_sec=window_sec, hop_sec=hop_sec
+  Fits ICA with n_components = number of EEG channels (full decomposition).
+  Then walks components in explained-variance order, skipping artifacts,
+  collecting the first ``return_n_components`` non-artifact sources.
+  If fewer non-artifact components exist, remaining channels are zero-filled.
+
+  Returns a TrialData whose eeg_data is a RawEeg with exactly
+  ``return_n_components`` channels.
+  """
+  ica, sources = apply_ica(raw, n_components=return_n_components + 10)
+  exclude = set(label_ica_components(ica, raw, keep_labels=keep_labels))
+
+  kept: list[int] = []
+  for i in range(ica.n_components_):
+    if i not in exclude:
+      kept.append(i)
+    if len(kept) == return_n_components:
+      break
+
+  picked = sources.copy().pick([sources.ch_names[i] for i in kept])
+
+  n_missing = return_n_components - len(kept)
+  if n_missing > 0:
+    zero_data = np.zeros((n_missing, picked.n_times))
+    zero_names = [f"zero{i}" for i in range(n_missing)]
+    zero_info = mne.create_info(zero_names, sfreq=picked.info["sfreq"], ch_types="misc")
+    zero_raw = mne.io.RawArray(zero_data, zero_info, verbose=False)
+    picked = picked.add_channels([zero_raw], force_update_info=True)
+
+  assert isinstance(picked, mne.io.BaseRaw)
+  return replace(trial, eeg_data=RawEeg(picked))
+
+
+_DEFAULT_BANDS = [(0.5, 4), (4, 8), (8, 13), (13, 30), (30, 45)]
+
+
+def _default_band_names(bands: list[tuple[float, float]]) -> list[str]:
+  return (
+    ["delta", "theta", "alpha", "beta", "gamma"]
+    if len(bands) == 5
+    else [f"{lo}-{hi}" for lo, hi in bands]
   )
+
+
+def band_power_trial(
+  trial: TrialData,
+  bands: list[tuple[float, float]] | None = None,
+  window_sec: float = 2.0,
+  hop_sec: float = 1.0,
+  apply_normalization: Normalization = "std",
+) -> TrialData:
+  """Compute band power on a trial's raw EEG, returning ArrayEeg output.
+
+  Reads channel names from the raw object to construct output names like
+  "delta_ICA000", "alpha_ICA003", preserving original channel identity.
+  """
+  if bands is None:
+    bands = _DEFAULT_BANDS
+  band_names_short = _default_band_names(bands)
+
+  raw = trial.eeg_data.get_eeg().raw_eeg
+  bp, _ = windowed_band_power(raw, bands=bands, window_sec=window_sec, hop_sec=hop_sec)
   _normalize_band_power(bp, apply_normalization)
 
   num_bands, n_comp, num_windows = bp.shape
   flat = bp.reshape(num_bands * n_comp, num_windows).astype(np.float32)
-  ch_names = [f"{bname}_IC{ic}" for bname in band_names_short for ic in range(n_comp)]
+  ch_names = [f"{bname}_{ch}" for bname in band_names_short for ch in raw.ch_names]
 
   return replace(
     trial, eeg_data=ArrayEeg(data=flat, ch_names=ch_names, sfreq=1.0 / hop_sec)
   )
 
 
-def ica_band_power_trial(
-  trial: TrialData,
-  n_components: int = 20,
-  bands: list[tuple[float, float]] | None = None,
-  window_sec: float = 2.0,
-  hop_sec: float = 0.1,
-  l_freq: float = 1.0,
-  h_freq: float = 50.0,
-  keep_labels: set[str] = {"brain", "other"},
-  apply_normalization: Normalization = "std",
-) -> TrialData:
-  """Apply ICA artifact cleaning + band power to a trial, returning ArrayEeg output.
+# -- Montage-specific preparation ---------------------------------------------------
 
-  Pipeline: filter → set montage → ICA → ICLabel cleanup → band power on cleaned sources.
 
-  The resulting ArrayEeg has shape (num_bands * n_kept_components, num_windows)
-  with channel names like "delta_IC0", "delta_IC1", ..., "gamma_IC19".
-
-  Parameters
-  ----------
-  trial : TrialData with RawEeg or loadable eeg_data
-  n_components : number of ICA components
-  bands : frequency band edges, defaults to delta/theta/alpha/beta/gamma
-  window_sec : band power window width in seconds
-  hop_sec : band power hop in seconds
-  l_freq, h_freq : bandpass filter edges
-  keep_labels : ICLabel categories to keep
-
-  Returns
-  -------
-  TrialData with ArrayEeg eeg_data, music_data unchanged
-  """
-  if bands is None:
-    bands = [(0.5, 4), (4, 8), (8, 13), (13, 30), (30, 45)]
-  band_names_short = (
-    ["delta", "theta", "alpha", "beta", "gamma"]
-    if len(bands) == 5
-    else [f"{lo}-{hi}" for lo, hi in bands]
-  )
-
-  raw = trial.eeg_data.get_eeg().raw_eeg.copy()
-  raw.filter(l_freq=l_freq, h_freq=h_freq, verbose=False)
+def _prepare_raw_hydrocel129(
+  raw: mne.io.BaseRaw, l_freq: float | None, h_freq: float | None
+) -> mne.io.BaseRaw:
+  """Filter, rename E129→Cz, and set GSN-HydroCel-129 montage."""
+  raw = raw.copy()
+  if l_freq is not None or h_freq is not None:
+    raw.filter(l_freq=l_freq, h_freq=h_freq, verbose=False)
   if "E129" in raw.ch_names:
     raw.rename_channels({"E129": "Cz"})
   raw.set_montage(
     mne.channels.make_standard_montage("GSN-HydroCel-129"), on_missing="warn"
   )
-
-  return _ica_band_power_from_raw(
-    trial,
-    raw,
-    bands,
-    band_names_short,
-    n_components,
-    window_sec,
-    hop_sec,
-    keep_labels,
-    apply_normalization,
-  )
+  return raw
 
 
 _NON_EEG_CHANNELS = frozenset({"GSR", "ECG", "VA1", "VA2", "VAtarg"})
 
 
 def _prepare_raw_1020(
-  raw: mne.io.BaseRaw, l_freq: float, h_freq: float
+  raw: mne.io.BaseRaw, l_freq: float | None, h_freq: float | None
 ) -> mne.io.BaseRaw:
   """Filter, drop non-EEG channels, fix casing, and set standard_1020 montage."""
   raw = raw.copy()
-  raw.filter(l_freq=l_freq, h_freq=h_freq, verbose=False)
+  if l_freq is not None or h_freq is not None:
+    raw.filter(l_freq=l_freq, h_freq=h_freq, verbose=False)
   raw.drop_channels([ch for ch in raw.ch_names if ch in _NON_EEG_CHANNELS])
   # BCMI training uses FP1/FPz but standard_1020 expects Fp1/Fpz
   montage = mne.channels.make_standard_montage("standard_1020")
@@ -218,40 +229,84 @@ def _prepare_raw_1020(
   return raw
 
 
+# -- Montage-specific ICA cleaning --------------------------------------------------
+
+
+def ica_clean_trial_hydrocel129(
+  trial: TrialData,
+  return_n_components: int = 20,
+  l_freq: float | None = 1.0,
+  h_freq: float | None = 50.0,
+  keep_labels: set[str] = {"brain", "other"},
+) -> TrialData:
+  """Prepare raw with GSN-HydroCel-129 montage, then ICA-clean."""
+  raw = _prepare_raw_hydrocel129(trial.eeg_data.get_eeg().raw_eeg, l_freq, h_freq)
+  return ica_clean_trial(trial, raw, return_n_components, keep_labels)
+
+
+def ica_clean_trial_1020(
+  trial: TrialData,
+  return_n_components: int = 20,
+  l_freq: float | None = 1.0,
+  h_freq: float | None = 50.0,
+  keep_labels: set[str] = {"brain", "other"},
+) -> TrialData:
+  """Prepare raw with standard 10-20 montage, then ICA-clean."""
+  raw = _prepare_raw_1020(trial.eeg_data.get_eeg().raw_eeg, l_freq, h_freq)
+  return ica_clean_trial(trial, raw, return_n_components, keep_labels)
+
+
+# -- Top-level entrypoints ----------------------------------------------------------
+
+
+def ica_band_power_trial(
+  trial: TrialData,
+  n_components: int = 20,
+  bands: list[tuple[float, float]] | None = None,
+  window_sec: float = 2.0,
+  hop_sec: float = 0.1,
+  l_freq: float | None = 1.0,
+  h_freq: float | None = 50.0,
+  keep_labels: set[str] = {"brain", "other"},
+  apply_normalization: Normalization = "std",
+) -> TrialData:
+  """ICA artifact cleaning + band power for GSN-HydroCel-129 montage data.
+
+  Pipeline: prepare raw → ICA clean → band power.
+  """
+  cleaned = ica_clean_trial_hydrocel129(
+    trial, n_components, l_freq, h_freq, keep_labels
+  )
+  return band_power_trial(
+    cleaned,
+    bands=bands,
+    window_sec=window_sec,
+    hop_sec=hop_sec,
+    apply_normalization=apply_normalization,
+  )
+
+
 def ica_band_power_trial_1020(
   trial: TrialData,
   n_components: int = 20,
   bands: list[tuple[float, float]] | None = None,
   window_sec: float = 2.0,
   hop_sec: float = 1.0,
-  l_freq: float = 1.0,
-  h_freq: float = 50.0,
+  l_freq: float | None = 1.0,
+  h_freq: float | None = 50.0,
   keep_labels: set[str] = {"brain", "other"},
   apply_normalization: Normalization = "std",
 ) -> TrialData:
-  """Like ica_band_power_trial but for datasets using standard 10-20 channel names.
+  """ICA artifact cleaning + band power for standard 10-20 montage data.
 
   Handles BCMI training data: drops non-EEG channels (GSR, ECG, VA*),
   fixes casing (FP1→Fp1), and uses standard_1020 montage.
   """
-  if bands is None:
-    bands = [(0.5, 4), (4, 8), (8, 13), (13, 30), (30, 45)]
-  band_names_short = (
-    ["delta", "theta", "alpha", "beta", "gamma"]
-    if len(bands) == 5
-    else [f"{lo}-{hi}" for lo, hi in bands]
-  )
-
-  raw = _prepare_raw_1020(trial.eeg_data.get_eeg().raw_eeg, l_freq, h_freq)
-
-  return _ica_band_power_from_raw(
-    trial,
-    raw,
-    bands,
-    band_names_short,
-    n_components,
-    window_sec,
-    hop_sec,
-    keep_labels,
-    apply_normalization,
+  cleaned = ica_clean_trial_1020(trial, n_components, l_freq, h_freq, keep_labels)
+  return band_power_trial(
+    cleaned,
+    bands=bands,
+    window_sec=window_sec,
+    hop_sec=hop_sec,
+    apply_normalization=apply_normalization,
   )

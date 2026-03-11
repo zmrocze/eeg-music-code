@@ -54,7 +54,8 @@ if __name__ == "__main__":
   trial_length_secs = Fraction(4, 1)
 
   ds = EEGMusicDataset.load_ondisk(
-    Path("./datasets/bcmi_preprocessed/bcmi_full_ica_40ch")
+    # Path("./datasets/bcmi_preprocessed/bcmi_full_ica_40ch")
+    Path("./datasets/bcmi_preprocessed/bcmi_pre_60ch/")
   )
   splitted = ds.subject_wise_split(p_train=0.6, p_val=0.2)
   train_ds = ArrayStratifiedSamplingDataset(

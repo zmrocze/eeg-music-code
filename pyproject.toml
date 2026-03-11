@@ -19,6 +19,7 @@ dependencies = [
   "mat73",
   "matplotlib",
   "pandas<3.0.0",
+  "kaleido",
   "librosa",
   "pydub",
   # "ffprobe",
