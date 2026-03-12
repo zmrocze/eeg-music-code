@@ -226,7 +226,21 @@ class MusingMusicId(MusicID):
   song_id: int  # 1-12, corresponding to 12 different songs
 
   def to_filename(self) -> str:
-    return f"song_{self.song_id:02d}.wav"
+    music_map = {
+      1: "Trip to the lonely planet - Mark Alow.wav",
+      2: "Sail - Awolnation.wav",
+      3: "Concept 15 - Kodomo.wav",
+      4: "Aurore - Claire David.wav",
+      5: "Proof - Idiotape.wav",
+      6: "Glider - Tycho.wav",
+      7: "Raag Bihag - B. Sivaramakrishna Rao.wav",  # missing song
+      8: "Albela sajan - Ismail Darbar.wav",
+      9: "Mor Bani Thanghat Kare - Sanjay Leela Bhansali.wav",
+      10: "Fallin - Dr. SaxLove.wav",
+      11: "Master of Running - Rickeyabo.wav",
+      12: "JB - Nobody.one.wav",
+    }
+    return music_map[self.song_id]
 
 
 @dataclass

@@ -76,7 +76,6 @@ from .data import (
   MusicData,
   MusicFilename,
   MusingMusicId,
-  MusingMusicIdData,
   OnDiskMusic,
   RawEeg,
   ScoresMusicId,
@@ -1587,21 +1586,27 @@ class BCMIMusingLoader(BaseBCMILoader[RawEeg]):
         music_filename=music_filename,
       )
 
-  def music_iterator(self) -> Iterator[Tuple[MusicFilename, MusingMusicIdData]]:
+  def music_iterator(self) -> Iterator[Tuple[MusicFilename, WavRAW]]:
     """
-    Iterate over all music IDs in the MUSIN-G dataset.
+    Iterate over all music files in the MUSIN-G dataset.
 
-    The MUSIN-G dataset does not include audio files, but we yield
-    MusingMusicIdData objects containing the music IDs for all 12 songs.
+    Expects song files in the stimuli directory.
 
     Yields:
-        Tuple of (MusicFilename, MusingMusicIdData) for each of the 12 songs
+        Tuple of (MusicFilename, WavRAW) for each of the 12 songs
     """
-    for song_id in range(1, 13):  # 12 songs
+    stimuli_dir = self.root_path / "stimuli"
+
+    if not stimuli_dir.exists():
+      return
+
+    for song_id in range(1, 13):
       music_id = MusingMusicId(song_id=song_id)
-      music_filename = MusicFilename.from_musicid(music_id)
-      music_data = MusingMusicIdData(music_id=music_id)
-      yield (music_filename, music_data)
+      music_ref = MusicFilename.from_musicid(music_id)
+      music_path = stimuli_dir / music_ref.filename
+
+      if music_path.exists():
+        yield music_ref, OnDiskMusic(filepath=music_path).get_music()
 
   def _get_experimental_info(self) -> Dict[str, Any]:
     return {

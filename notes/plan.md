@@ -193,7 +193,7 @@ a co z:
  - [ ] test, validation, repeating - czy mam dobrze?
  - dokładne accuracy czy przybliżone
  - hydra-net a subject-specific
- - 
+ - w pdf jest jedynie wynik onesubj-bcmi-songid co nie pozwala mówić o generalizacji
 
 pytanie:
  - jak ustalić że wynik jest statystycznie istotny. jak ustalić że jest failem
