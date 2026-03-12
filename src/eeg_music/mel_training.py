@@ -330,21 +330,24 @@ class ClassifierLightning(LightningModule):
 
   # ---- metrics bookkeeping ----
   def _reset_metrics(self):
-    self._correct = 0
-    self._total = 0
+    self._metrics: dict[str, dict[str, int]] = {}
 
-  def _update_metrics(self, logits: torch.Tensor, targets: torch.Tensor):
-    if self.config.loss == "bce":
-      preds = (logits.squeeze(-1) > 0).long()
-    else:
-      preds = logits.argmax(dim=1)
-    self._correct += (preds == targets).sum().item()
-    self._total += targets.size(0)
+  def _update_metrics(self, logits: torch.Tensor, targets: torch.Tensor, stage: str):
+    if stage not in self._metrics:
+      self._metrics[stage] = {"correct": 0, "total": 0}
+    preds = (
+      (logits.squeeze(-1) > 0).long()
+      if self.config.loss == "bce"
+      else logits.argmax(dim=1)
+    )
+    self._metrics[stage]["correct"] += (preds == targets).sum().item()
+    self._metrics[stage]["total"] += targets.size(0)
 
   def _log_and_reset_metrics(self, stage: str):
-    acc = self._correct / self._total if self._total > 0 else 0.0
+    m = self._metrics.get(stage, {"correct": 0, "total": 0})
+    acc = m["correct"] / m["total"] if m["total"] > 0 else 0.0
     self.log(f"{stage}_accuracy", acc, on_epoch=True, prog_bar=True, logger=True)
-    self._reset_metrics()
+    self._metrics.pop(stage, None)
 
   # ---- forward / steps ----
   def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -358,7 +361,7 @@ class ClassifierLightning(LightningModule):
       loss = self.loss_fn(logits.squeeze(-1), y.float())
     else:
       loss = self.loss_fn(logits, y)
-    self._update_metrics(logits, y)
+    self._update_metrics(logits, y, stage)
     self.log(
       f"{stage}_loss",
       loss,
@@ -416,7 +419,7 @@ class ClassifierTraining(MainTraining):
     collate_fn = create_collate_fn(
       include_info=self.config.include_info,
       music_batch_fn=lambda xs: torch.tensor(
-        [x.music_id.song_id for x in xs],
+        [x.music_id.song_id - 1 for x in xs],
         dtype=torch.long,
       ),
       eeg_batch_fn=lambda x: torch.stack(

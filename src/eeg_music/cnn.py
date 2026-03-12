@@ -106,7 +106,8 @@ class CNNClassifier(nn.Module):
     )
     # After block3: (B, 128, 7, 2)
     self.flatten = nn.Flatten()
-    self.fc = nn.Linear(128 * 7 * 2, num_classes)
+    # self.fc = nn.Linear(128 * 7 * 2, num_classes)
+    self.fc = nn.Linear(128 * 7 * 1, num_classes)
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:
     return self.fc(self.flatten(self.block3(self.block2(self.block1(x)))))
@@ -151,9 +152,10 @@ class CNNReconstruction(nn.Module):
 
     # ---- Bottleneck ----
     self.flatten = nn.Flatten()
-    self.fc_down = nn.Linear(128 * 7 * 2, 128)
+    # self.fc_down = nn.Linear(128 * 7 * 2, 128)
+    self.fc_down = nn.Linear(128 * 7 * 1, 128)
     # (B,128,1,1) -> (B,128,7,2) via transposed conv
-    self.fc_up = nn.ConvTranspose2d(128, 128, kernel_size=(7, 2))
+    self.fc_up = nn.ConvTranspose2d(128, 128, kernel_size=(7, 1))
     self.bottleneck_elu = nn.ELU()
 
     # ---- Decoder ----
@@ -163,15 +165,17 @@ class CNNReconstruction(nn.Module):
       256, 128, 128, time_kernel=3, freq_kernel=3, scale=(2, 2), dropout=dropout
     )
     # After dec3: (B, 128, 14, 4) — need to match enc2 output (15, 5)
-    self.dec3_spatial_adapt = nn.AdaptiveAvgPool2d((15, 5))
+    # self.dec3_spatial_adapt = nn.AdaptiveAvgPool2d((15, 5))
+    self.dec3_spatial_adapt = nn.AdaptiveAvgPool2d((15, 2))
 
     # Skip from enc2: (B, 128, 15, 5) — concat -> 256
     self.dec2 = DeconvBlock(
       256, 64, 32, time_kernel=3, freq_kernel=3, scale=(2, 2), dropout=dropout
     )
-    # After dec2: (B, 32, 30, 10)
+    # After dec2: (B, 32, 30, 4) — need to match enc1 output (30, 5)
+    self.dec2_spatial_adapt = nn.AdaptiveAvgPool2d((30, 5))
 
-    # Skip from enc1 has shape (B, 32, 30, 10) — concat -> 64 channels
+    # Skip from enc1 has shape (B, 32, 30, 5) — concat -> 64 channels
     self.dec1 = DeconvBlock(
       64, 16, out_channels, time_kernel=5, freq_kernel=5, scale=(2, 2), dropout=dropout
     )
@@ -209,6 +213,7 @@ class CNNReconstruction(nn.Module):
     d = self.dec3(torch.cat([d, e3], dim=1))  # skip from enc3
     d = self.dec3_spatial_adapt(d)  # align spatial to enc2
     d = self.dec2(torch.cat([d, e2], dim=1))  # skip from enc2
+    d = self.dec2_spatial_adapt(d)  # align spatial to enc1
     d = self.dec1(torch.cat([d, e1], dim=1))  # skip from enc1
 
     # Adapt spatial dims to (64, 64)
@@ -252,6 +257,8 @@ class CNNReconstruction(nn.Module):
     d = torch.cat([d, e2], dim=1)
     print(f"  {'cat(d, e2)':<20} {list(d.shape)}")
     d = self.dec2.forward_verbose(d, "dec2.")
+    d = self.dec2_spatial_adapt(d)
+    print(f"  {'spatial_adapt':<20} {list(d.shape)}")
 
     print("--- Decoder Block 1 (+ skip from enc1) ---")
     d = torch.cat([d, e1], dim=1)
@@ -279,7 +286,8 @@ def _print_params(model: nn.Module, name: str) -> None:
 
 
 if __name__ == "__main__":
-  x = torch.randn(2, 1, 60, 20)
+  # x = torch.randn(2, 1, 60, 20)
+  x = torch.randn(2, 1, 60, 10)
 
   print("=" * 60)
   print("CNNClassifier")

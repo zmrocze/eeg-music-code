@@ -20,7 +20,7 @@ if __name__ == "__main__":
   trial_length_secs = Fraction(2, 1)
 
   ds = EEGMusicDataset.load_ondisk(
-    Path("./datasets/bcmi_preprocessed/bcmi_mel64_60ch/")
+    Path("./datasets/musing_preprocessed/musing_mel64_60ch/")
   )
 
   splitted = ds.subject_wise_split(p_train=0.6, p_val=0.2)
@@ -41,7 +41,7 @@ if __name__ == "__main__":
       lr_config=LRCosine(max_lr=3e-4, T_0=10, T_mult=2),
       optimizer=UseAdamW(),
     ),
-    batch_size=64,
+    batch_size=256,
     num_epochs=200,
   )
 
