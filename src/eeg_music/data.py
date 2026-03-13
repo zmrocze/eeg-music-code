@@ -1480,6 +1480,22 @@ def std_normalize_trial_channels(trial):
   )
 
 
+def pick_channels_trial(
+  trial: TrialData[EegData, MusicData], ch_names: List[str]
+) -> TrialData[RawEeg, MusicData]:
+  eeg = trial.eeg_data.get_eeg().raw_eeg.copy().pick(ch_names)
+  return TrialData(
+    dataset=trial.dataset,
+    subject=trial.subject,
+    session=trial.session,
+    run=trial.run,
+    trial_id=trial.trial_id,
+    music_filename=trial.music_filename,
+    music_data=trial.music_data,
+    eeg_data=RawEeg(eeg),
+  )
+
+
 def filter_trial(
   trial: TrialData[EegData, MusicData], l_freq: Optional[float], h_freq: Optional[float]
 ) -> TrialData[EegData, MusicData]:
