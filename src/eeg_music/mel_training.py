@@ -170,7 +170,8 @@ class MelTraining(MainTraining):
       include_info=self.config.include_info,
       music_batch_fn=lambda xs: torch.stack(
         # !!!! take middle 1s of recording
-        [torch.from_numpy(x.mel[:, 32 : 64 + 32]).float() for x in xs]
+        # [torch.from_numpy(x.mel[:, 32 : 64 + 32]).float() for x in xs]
+        [torch.from_numpy((x.mel + 40.0) / 40.0).float() for x in xs]
       ).unsqueeze(1),  # (B, 1, n_mels, n_frames)
       eeg_batch_fn=lambda x: torch.stack(
         [torch.from_numpy(a.get_array().data) for a in x]  # pyright: ignore[reportAttributeAccessIssue]

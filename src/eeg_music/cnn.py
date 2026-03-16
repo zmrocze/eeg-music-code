@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class ConvBlock(nn.Module):
@@ -162,27 +163,25 @@ class CNNReconstruction(nn.Module):
     # After reshape: (B, 128, 7, 2)
     # Skip from enc3: (B, 128, 7, 2) — concat -> 256
     self.dec3 = DeconvBlock(
-      256, 128, 128, time_kernel=3, freq_kernel=3, scale=(2, 2), dropout=dropout
+      256, 128, 128, time_kernel=3, freq_kernel=3, scale=(2, 4), dropout=dropout
     )
-    # After dec3: (B, 128, 14, 4) — need to match enc2 output (15, 5)
-    # self.dec3_spatial_adapt = nn.AdaptiveAvgPool2d((15, 5))
-    self.dec3_spatial_adapt = nn.AdaptiveAvgPool2d((15, 2))
+    # After dec3: (B, 128, 14, 4) — height adapt to 15 for enc2 skip
+    self.dec3_height_adapt = nn.AdaptiveAvgPool2d((15, None))
 
-    # Skip from enc2: (B, 128, 15, 5) — concat -> 256
+    # Skip from enc2: (B, 128, 15, 2) — interpolated to (15, 4) before concat -> 256
     self.dec2 = DeconvBlock(
-      256, 64, 32, time_kernel=3, freq_kernel=3, scale=(2, 2), dropout=dropout
+      256, 64, 32, time_kernel=3, freq_kernel=3, scale=(2, 4), dropout=dropout
     )
-    # After dec2: (B, 32, 30, 4) — need to match enc1 output (30, 5)
-    self.dec2_spatial_adapt = nn.AdaptiveAvgPool2d((30, 5))
+    # After dec2: (B, 32, 30, 16) — height already matches enc1
 
-    # Skip from enc1 has shape (B, 32, 30, 5) — concat -> 64 channels
+    # Skip from enc1: (B, 32, 30, 5) — interpolated to (30, 16) before concat -> 64
     self.dec1 = DeconvBlock(
-      64, 16, out_channels, time_kernel=5, freq_kernel=5, scale=(2, 2), dropout=dropout
+      64, 16, out_channels, time_kernel=5, freq_kernel=5, scale=(2, 4), dropout=dropout
     )
-    # After dec1: (B, out_channels, 60, 20)
+    # After dec1: (B, out_channels, 60, 64)
 
     # ---- Adapt to target (64, 64) ----
-    # Use a conv + adaptive pool to reshape spatial dims from (60,20) -> (64,64)
+    # Decoder outputs (60, 64); only height needs 60 -> 64
     self.adapt = nn.Sequential(
       nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
       nn.ELU(),
@@ -211,11 +210,11 @@ class CNNReconstruction(nn.Module):
 
     # Decoder with skip connections
     d = self.dec3(torch.cat([d, e3], dim=1))  # skip from enc3
-    d = self.dec3_spatial_adapt(d)  # align spatial to enc2
-    d = self.dec2(torch.cat([d, e2], dim=1))  # skip from enc2
-    d = self.dec2_spatial_adapt(d)  # align spatial to enc1
-    d = self.dec1(torch.cat([d, e1], dim=1))  # skip from enc1
-
+    d = self.dec3_height_adapt(d)  # (14,4) -> (15,4)
+    e2_up = F.interpolate(e2, size=d.shape[2:], mode="bilinear", align_corners=False)
+    d = self.dec2(torch.cat([d, e2_up], dim=1))  # skip from enc2
+    e1_up = F.interpolate(e1, size=d.shape[2:], mode="bilinear", align_corners=False)
+    d = self.dec1(torch.cat([d, e1_up], dim=1))  # skip from enc1
     # Adapt spatial dims to (64, 64)
     d = self.adapt(d)
 
@@ -250,18 +249,20 @@ class CNNReconstruction(nn.Module):
     d = torch.cat([d, e3], dim=1)
     print(f"  {'cat(d, e3)':<20} {list(d.shape)}")
     d = self.dec3.forward_verbose(d, "dec3.")
-    d = self.dec3_spatial_adapt(d)
-    print(f"  {'spatial_adapt':<20} {list(d.shape)}")
+    d = self.dec3_height_adapt(d)
+    print(f"  {'height_adapt':<20} {list(d.shape)}")
 
     print("--- Decoder Block 2 (+ skip from enc2) ---")
-    d = torch.cat([d, e2], dim=1)
+    e2_up = F.interpolate(e2, size=d.shape[2:], mode="bilinear", align_corners=False)
+    print(f"  {'e2 interpolated':<20} {list(e2_up.shape)}")
+    d = torch.cat([d, e2_up], dim=1)
     print(f"  {'cat(d, e2)':<20} {list(d.shape)}")
     d = self.dec2.forward_verbose(d, "dec2.")
-    d = self.dec2_spatial_adapt(d)
-    print(f"  {'spatial_adapt':<20} {list(d.shape)}")
 
     print("--- Decoder Block 1 (+ skip from enc1) ---")
-    d = torch.cat([d, e1], dim=1)
+    e1_up = F.interpolate(e1, size=d.shape[2:], mode="bilinear", align_corners=False)
+    print(f"  {'e1 interpolated':<20} {list(e1_up.shape)}")
+    d = torch.cat([d, e1_up], dim=1)
     print(f"  {'cat(d, e1)':<20} {list(d.shape)}")
     d = self.dec1.forward_verbose(d, "dec1.")
 
@@ -302,5 +303,6 @@ if __name__ == "__main__":
   print("=" * 60)
   rec = CNNReconstruction(in_channels=1, out_channels=1)
   rec.eval()
-  rec.forward_verbose(x)
+  _y = rec.forward_verbose(x)
+  # print("rec", _y)
   _print_params(rec, "CNNReconstruction")
