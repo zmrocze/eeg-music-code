@@ -10,14 +10,12 @@ from .data import (
   MappedDataset,
   MelRaw,
   MusicData,
-  NoteOnsets,
   RepeatedDataset,
   RobustNormalizationStats,
   RobustNormalizedDataset,
   StratifiedSamplingDataset,
   TrialData,
   EegData,
-  WavRAW,
   rereference_trial,
   std_normalize_trial_per_channel,
   trial_to_arrayeeg,
@@ -299,7 +297,7 @@ def create_dataloaders_but_with_normalization(
 
 
 def create_collate_fn(
-  music_batch_fn: Callable[[Sequence[MelRaw | WavRAW | NoteOnsets]], Any],
+  music_batch_fn: Callable[..., Any],
   include_info: bool = False,
   eeg_batch_fn: Optional[Callable[[Sequence[EegData]], Any]] = None,
 ) -> Callable[

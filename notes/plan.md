@@ -183,7 +183,16 @@ reszta fail
 
 
 
-
+do dodania do pracy:
+ - stratified sampling ablation
+ - reconstruction related
+ - reconstruction fails:
+  * cnn
+  * do promotora ?: eegpt
+ - emotion pred fails
+ - methods:
+  * CNNClassifier
+  * CNNReconstruction
 
 
 
@@ -204,8 +213,55 @@ eksperymenty:
  - ica vs raw eeg
  - [ ] stratified sampling usefulness
  - [ ] varying length, discussion vs pandey
-
+ - ablation: band power ICA vs raw EEG
  - loudness?
 
 faile:
  - 
+
+## results:
+
+### raw eeg ablatian
+
+porównanie na cnn? ale wtedy inne architektury
+
+### stratified ablation
+
+doesn't improve results, but we keep using it anyway
+
+### musing all subjects subject-wise split 3s
+
+train_musing_baseline_fullset
+XGBoost Accuracy: 0.1956
+SVM Accuracy:     0.1177
+KNN Accuracy:     0.1737
+
+# 1s
+
+jako część stratified ablation:
+(10, 'XGBoost'): 0.19895833333333332,
+(10, 'SVM'): 0.12229166666666667,
+(10, 'KNN'): 0.1675,
+NN: 0.1740 (?) jaka
+
+
+### musing temporal-split 1s
+
+XGBoost Accuracy: 0.9118
+SVM Accuracy:     0.4222
+KNN Accuracy:     0.7352
+
+### bcmi temporal-split 1s
+single-subject
+NN      & ---    \\
+
+### bcmi noteonsets
+
+NN      & - \\
+
+### bcmi emotions
+
+XGBoost Accuracy: 0.1089
+SVM Accuracy:     0.1123
+KNN Accuracy:     0.1117
+NN      & 0.1130 \\

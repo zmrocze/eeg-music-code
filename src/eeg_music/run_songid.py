@@ -61,14 +61,15 @@ def create_config(
 if __name__ == "__main__":
   # ds = EEGMusicDataset.load_ondisk(Path("./datasets/bcmi_preprocessed/bcmi_onesubj_ica_40ch/"))
   # splitted = ds.trial_wise_split(p_train=0.75, p_val=0.0)
-  trial_length_secs = Fraction(5, 1)
+  trial_length_secs = Fraction(1, 1)
   # train_ds = prepare_ds(splitted["train"], trial_length_secs)
   # test_ds = prepare_ds(splitted["test"], trial_length_secs)
 
   # train_ds = prepare_ds(EEGMusicDataset.load_ondisk(Path("./datasets/bcmi_preprocessed/bcmi_train_onesubj_ica_40ch/")), trial_length_secs)
   # test_ds = prepare_ds(EEGMusicDataset.load_ondisk(Path("./datasets/bcmi_preprocessed/bcmi_test_onesubj_ica_40ch/")), trial_length_secs)
   ds = EEGMusicDataset.load_ondisk(
-    Path("./datasets/musing_preprocessed/musing_ica_8ch")
+    # Path("./datasets/musing_preprocessed/musing_ica_8ch")
+    Path("./datasets/musing_preprocessed/musing_basic_id_129ch")
   )
   splitted = ds.subject_wise_split(p_train=0.6, p_val=0.2)
   train_ds = ArrayStratifiedSamplingDataset(
@@ -85,7 +86,7 @@ if __name__ == "__main__":
     model_config=EEGNetConfig(),
     lr_config=LRCosine(max_lr=3e-5, T_0=10, T_mult=2),
     num_epochs=200,
-    eeg_sample_rate=10,
+    eeg_sample_rate=256,
     batch_size=512,
     trial_length_secs=int(trial_length_secs),
     median_num_noteonsets=5,

@@ -13,7 +13,7 @@ from lightning.pytorch.callbacks import (
 )
 from lightning.pytorch.callbacks.lr_finder import LearningRateFinder
 
-from .cnn import CNNReconstruction, CNNClassifier
+from .cnn import CNNReconstruction, CNNClassifier, CNNClassifierRaw
 from .eegpt import LRCosine, LRStepLR, UseAdamW, UseSGD, mk_optimizer_and_lr_scheduler
 from .training import (
   MainTraining,
@@ -28,6 +28,14 @@ from .dataloader import create_collate_fn, create_dataloader
 @dataclass
 class CNNClassifierConfig:
   """Config wrapper for CNNClassifier."""
+
+  in_channels: int = 1
+  dropout: float = 0.25
+
+
+@dataclass
+class CNNClassifierRawConfig:
+  """Config wrapper for CNNClassifierRaw (129×256 input, bigger kernels)."""
 
   in_channels: int = 1
   dropout: float = 0.25
@@ -268,7 +276,9 @@ class MelTraining(MainTraining):
 class ClassifierModelConfig:
   """Model config for CNN classifier — fields used by ClassifierLightning."""
 
-  model_config: CNNClassifierConfig = field(default_factory=CNNClassifierConfig)
+  model_config: CNNClassifierConfig | CNNClassifierRawConfig = field(
+    default_factory=CNNClassifierConfig
+  )
   num_classes: int = 4
   loss: Literal["ce", "bce"] = "ce"
   lr_config: float | LRCosine | LRStepLR = 1e-4
@@ -318,11 +328,15 @@ class ClassifierLightning(LightningModule):
 
     mc = config.model_config
     num_out = 1 if config.loss == "bce" else config.num_classes
-    self.model = CNNClassifier(
-      num_classes=num_out,
-      in_channels=mc.in_channels,
-      dropout=mc.dropout,
-    )
+    match mc:
+      case CNNClassifierRawConfig():
+        self.model = CNNClassifierRaw(
+          num_classes=num_out, in_channels=mc.in_channels, dropout=mc.dropout
+        )
+      case CNNClassifierConfig():
+        self.model = CNNClassifier(
+          num_classes=num_out, in_channels=mc.in_channels, dropout=mc.dropout
+        )
 
     self.loss_fn: nn.Module = (
       nn.BCEWithLogitsLoss() if config.loss == "bce" else nn.CrossEntropyLoss()
@@ -331,7 +345,7 @@ class ClassifierLightning(LightningModule):
 
   # ---- metrics bookkeeping ----
   def _reset_metrics(self):
-    self._metrics: dict[str, dict[str, int]] = {}
+    self._metrics: dict[str, dict[str, int | float]] = {}
 
   def _update_metrics(self, logits: torch.Tensor, targets: torch.Tensor, stage: str):
     if stage not in self._metrics:

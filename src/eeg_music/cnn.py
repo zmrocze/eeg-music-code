@@ -92,6 +92,44 @@ class DeconvBlock(nn.Module):
 # ---------------------------------------------------------------------------
 
 
+class CNNClassifierRaw(nn.Module):
+  """Like CNNClassifier but for raw EEG input of shape (B, 1, 129, 256) with bigger kernels."""
+
+  def __init__(self, num_classes: int = 4, in_channels: int = 1, dropout: float = 0.25):
+    super().__init__()
+    # Input: (B, in_channels, 129, 256)
+    self.block1 = ConvBlock(
+      in_channels, 16, 32, freq_kernel=9, time_kernel=9, dropout=dropout
+    )
+    # After block1: (B, 32, 64, 128)
+    self.block2 = ConvBlock(32, 64, 128, freq_kernel=7, time_kernel=7, dropout=dropout)
+    # After block2: (B, 128, 32, 64)
+    self.block3 = ConvBlock(
+      128, 128, 128, freq_kernel=5, time_kernel=5, dropout=dropout
+    )
+    # After block3: (B, 128, 16, 32)
+    self.pool = nn.AdaptiveAvgPool2d((4, 4))
+    self.flatten = nn.Flatten()
+    self.fc = nn.Linear(128 * 4 * 4, num_classes)
+
+  def forward(self, x: torch.Tensor) -> torch.Tensor:
+    return self.fc(self.flatten(self.pool(self.block3(self.block2(self.block1(x))))))
+
+  def forward_verbose(self, x: torch.Tensor) -> torch.Tensor:
+    print(f"{'Input':<25} {list(x.shape)}")
+    x = self.block1.forward_verbose(x, "block1.")
+    x = self.block2.forward_verbose(x, "block2.")
+    x = self.block3.forward_verbose(x, "block3.")
+    for name, layer in [
+      ("pool", self.pool),
+      ("flatten", self.flatten),
+      ("fc", self.fc),
+    ]:
+      x = layer(x)
+      print(f"  {name:<20} {list(x.shape)}")
+    return x
+
+
 class CNNClassifier(nn.Module):
   def __init__(self, num_classes: int = 4, in_channels: int = 1, dropout: float = 0.25):
     super().__init__()
@@ -291,6 +329,14 @@ if __name__ == "__main__":
   x = torch.randn(2, 1, 60, 10)
 
   print("=" * 60)
+  print("CNNClassifierRaw")
+  print("=" * 60)
+  clf_raw = CNNClassifierRaw(num_classes=4, in_channels=1)
+  clf_raw.eval()
+  clf_raw.forward_verbose(torch.randn(2, 1, 129, 256))
+  _print_params(clf_raw, "CNNClassifierRaw")
+
+  print("\n" + "=" * 60)
   print("CNNClassifier")
   print("=" * 60)
   clf = CNNClassifier(num_classes=4, in_channels=1)

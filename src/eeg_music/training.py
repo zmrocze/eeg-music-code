@@ -180,29 +180,28 @@ def count_n_params(model):
 
 def log_spectrograms(pl_module, y_hat, y, batch_idx, stage: str, n_samples=4):
   """Log a batch of predicted and ground truth spectrograms to wandb."""
-  y_hat = y_hat.detach().cpu()[:n_samples]
-  y = y.detach().cpu()[:n_samples]
+  import matplotlib.pyplot as plt
+
+  y_hat = y_hat.detach().cpu()[:n_samples].squeeze(1).numpy()
+  y = y.detach().cpu()[:n_samples].squeeze(1).numpy()
 
   images = []
   for i, (pred_spec, true_spec) in enumerate(zip(y_hat, y)):
-    # # Normalize for visualization
-    pred_spec = (pred_spec - true_spec.min()) / (
-      true_spec.max() - true_spec.min() + 1e-8
+    vmin, vmax = true_spec.min(), true_spec.max()
+    fig, axes = plt.subplots(1, 2, figsize=(8, 3))
+    axes[0].imshow(
+      pred_spec, aspect="auto", origin="lower", cmap="inferno", vmin=vmin, vmax=vmax
     )
-    true_spec = (true_spec - true_spec.min()) / (
-      true_spec.max() - true_spec.min() + 1e-8
+    axes[0].set_title("Predicted")
+    axes[1].imshow(
+      true_spec, aspect="auto", origin="lower", cmap="inferno", vmin=vmin, vmax=vmax
     )
+    axes[1].set_title("True")
+    fig.tight_layout()
+    images.append(wandb.Image(fig, caption=f"Sample {i}"))
+    plt.close(fig)
 
-    # Combine pred and true for side-by-side comparison
-    combined_spec = torch.cat((pred_spec, true_spec), dim=1)
-
-    images.append(
-      wandb.Image(combined_spec.numpy(), caption=f"Pred vs. True (Sample {i})")
-    )
-
-  pl_module.logger.experiment.log(
-    {f"{stage}/spectrograms": images}, step=pl_module.global_step
-  )
+  pl_module.logger.experiment.log({f"{stage}/spectrograms": images})
 
 
 class SpectrogramLoggingCallback(Callback):
@@ -404,29 +403,22 @@ class AUROCCallback(Callback):
     Returns:
       Similarity score (higher = more similar)
     """
+    pred_np = pred.squeeze().cpu().numpy()
+    target_np = target.squeeze().cpu().numpy()
+
     if self.similarity_metric == "cosine":
-      # Flatten and compute cosine similarity
-      pred_flat = pred.reshape(-1).cpu().numpy()
-      target_flat = target.reshape(-1).cpu().numpy()
-      # cosine_similarity expects 2D arrays
-      sim = cosine_similarity(pred_flat.reshape(1, -1), target_flat.reshape(1, -1))[
-        0, 0
-      ]
-      return sim
+      return cosine_similarity(pred_np.reshape(1, -1), target_np.reshape(1, -1))[0, 0]
 
     elif self.similarity_metric == "structural_similarity":
-      # Convert to numpy and compute SSIM
-      pred_np = pred.cpu().numpy()
-      target_np = target.cpu().numpy()
-      # SSIM expects 2D grayscale images
-      sim = structural_similarity(
+      win_size = min(7, *pred_np.shape) | 1
+      return structural_similarity(
         pred_np,
         target_np,
+        win_size=win_size,
         data_range=max(
           pred_np.max() - pred_np.min(), target_np.max() - target_np.min()
         ),
       )
-      return sim
 
     else:
       raise ValueError(f"Unknown similarity metric: {self.similarity_metric}")

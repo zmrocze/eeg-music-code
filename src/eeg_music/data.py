@@ -491,6 +491,13 @@ class RawEeg(EegData):
     self.raw_eeg = raw_eeg
     self.raw_eeg.load_data()
 
+  def get_array(self) -> "ArrayEeg":
+    return ArrayEeg(
+      data=np.asarray(self.raw_eeg.get_data(), dtype=np.float32),
+      ch_names=self.raw_eeg.ch_names,
+      sfreq=float(self.raw_eeg.info["sfreq"]),
+    )
+
   def get_eeg(self) -> "RawEeg":
     """Get the EEG data."""
     # self.raw_eeg.load_data()
@@ -551,6 +558,9 @@ class OnDiskEeg(EegData):
   """EEG data backed by an EDF file on disk."""
 
   filepath: Path
+
+  def get_array(self) -> "ArrayEeg":
+    return self.get_eeg().get_array()
 
   def get_eeg(self) -> "RawEeg":
     """Load and return the EEG data as RawEeg."""
