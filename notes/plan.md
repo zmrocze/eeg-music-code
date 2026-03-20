@@ -193,6 +193,7 @@ do dodania do pracy:
  - methods:
   * CNNClassifier
   * CNNReconstruction
+  * wyjaśnienie dlaczego taka architektura
 
 
 
@@ -223,7 +224,8 @@ faile:
 
 ### raw eeg ablatian
 
-porównanie na cnn? ale wtedy inne architektury
+- [ ] porównanie na cnn? ale wtedy inne architektury
+ * band power, cnn, 256 epochów test_acc: 0.1573
 
 ### stratified ablation
 

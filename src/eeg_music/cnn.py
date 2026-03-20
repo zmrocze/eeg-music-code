@@ -99,18 +99,16 @@ class CNNClassifierRaw(nn.Module):
     super().__init__()
     # Input: (B, in_channels, 129, 256)
     self.block1 = ConvBlock(
-      in_channels, 16, 32, freq_kernel=9, time_kernel=9, dropout=dropout
+      in_channels, 8, 16, freq_kernel=9, time_kernel=9, dropout=dropout
     )
-    # After block1: (B, 32, 64, 128)
-    self.block2 = ConvBlock(32, 64, 128, freq_kernel=7, time_kernel=7, dropout=dropout)
-    # After block2: (B, 128, 32, 64)
-    self.block3 = ConvBlock(
-      128, 128, 128, freq_kernel=5, time_kernel=5, dropout=dropout
-    )
-    # After block3: (B, 128, 16, 32)
+    # After block1: (B, 16, 64, 128)
+    self.block2 = ConvBlock(16, 32, 64, freq_kernel=7, time_kernel=7, dropout=dropout)
+    # After block2: (B, 64, 32, 64)
+    self.block3 = ConvBlock(64, 64, 64, freq_kernel=5, time_kernel=5, dropout=dropout)
+    # After block3: (B, 64, 16, 32)
     self.pool = nn.AdaptiveAvgPool2d((4, 4))
     self.flatten = nn.Flatten()
-    self.fc = nn.Linear(128 * 4 * 4, num_classes)
+    self.fc = nn.Linear(64 * 4 * 4, num_classes)
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:
     return self.fc(self.flatten(self.pool(self.block3(self.block2(self.block1(x))))))
@@ -135,18 +133,16 @@ class CNNClassifier(nn.Module):
     super().__init__()
     # Input: (batch, in_channels, 60, 20)
     self.block1 = ConvBlock(
-      in_channels, 16, 32, freq_kernel=5, time_kernel=5, dropout=dropout
+      in_channels, 8, 16, freq_kernel=5, time_kernel=5, dropout=dropout
     )
-    # After block1: (B, 32, 30, 10)
-    self.block2 = ConvBlock(32, 64, 128, freq_kernel=3, time_kernel=3, dropout=dropout)
-    # After block2: (B, 128, 15, 5)
-    self.block3 = ConvBlock(
-      128, 128, 128, freq_kernel=3, time_kernel=3, dropout=dropout
-    )
-    # After block3: (B, 128, 7, 2)
+    # After block1: (B, 16, 30, 10)
+    self.block2 = ConvBlock(16, 32, 64, freq_kernel=3, time_kernel=3, dropout=dropout)
+    # After block2: (B, 64, 15, 5)
+    self.block3 = ConvBlock(64, 64, 64, freq_kernel=3, time_kernel=3, dropout=dropout)
+    # After block3: (B, 64, 7, 2)
     self.flatten = nn.Flatten()
-    # self.fc = nn.Linear(128 * 7 * 2, num_classes)
-    self.fc = nn.Linear(128 * 7 * 1, num_classes)
+    # self.fc = nn.Linear(64 * 7 * 2, num_classes)
+    self.fc = nn.Linear(64 * 7 * 1, num_classes)
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:
     return self.fc(self.flatten(self.block3(self.block2(self.block1(x)))))
@@ -181,40 +177,40 @@ class CNNReconstruction(nn.Module):
     # ---- Encoder (same as CNNClassifier) ----
     # Input: (B, in_channels, 60, 20)
     self.enc1 = ConvBlock(
-      in_channels, 16, 32, freq_kernel=5, time_kernel=5, dropout=dropout
+      in_channels, 8, 16, freq_kernel=5, time_kernel=5, dropout=dropout
     )
-    # After enc1: (B, 32, 30, 10)
-    self.enc2 = ConvBlock(32, 64, 128, freq_kernel=3, time_kernel=3, dropout=dropout)
-    # After enc2: (B, 128, 15, 5)
-    self.enc3 = ConvBlock(128, 128, 128, freq_kernel=3, time_kernel=3, dropout=dropout)
-    # After enc3: (B, 128, 7, 2)
+    # After enc1: (B, 16, 30, 10)
+    self.enc2 = ConvBlock(16, 32, 64, freq_kernel=3, time_kernel=3, dropout=dropout)
+    # After enc2: (B, 64, 15, 5)
+    self.enc3 = ConvBlock(64, 64, 64, freq_kernel=3, time_kernel=3, dropout=dropout)
+    # After enc3: (B, 64, 7, 2)
 
     # ---- Bottleneck ----
     self.flatten = nn.Flatten()
-    # self.fc_down = nn.Linear(128 * 7 * 2, 128)
-    self.fc_down = nn.Linear(128 * 7 * 1, 128)
-    # (B,128,1,1) -> (B,128,7,2) via transposed conv
-    self.fc_up = nn.ConvTranspose2d(128, 128, kernel_size=(7, 1))
+    # self.fc_down = nn.Linear(64 * 7 * 2, 64)
+    self.fc_down = nn.Linear(64 * 7 * 1, 64)
+    # (B,64,1,1) -> (B,64,7,2) via transposed conv
+    self.fc_up = nn.ConvTranspose2d(64, 64, kernel_size=(7, 1))
     self.bottleneck_elu = nn.ELU()
 
     # ---- Decoder ----
-    # After reshape: (B, 128, 7, 2)
-    # Skip from enc3: (B, 128, 7, 2) — concat -> 256
+    # After reshape: (B, 64, 7, 2)
+    # Skip from enc3: (B, 64, 7, 2) — concat -> 128
     self.dec3 = DeconvBlock(
-      256, 128, 128, time_kernel=3, freq_kernel=3, scale=(2, 4), dropout=dropout
+      128, 64, 64, time_kernel=3, freq_kernel=3, scale=(2, 4), dropout=dropout
     )
-    # After dec3: (B, 128, 14, 4) — height adapt to 15 for enc2 skip
+    # After dec3: (B, 64, 14, 4) — height adapt to 15 for enc2 skip
     self.dec3_height_adapt = nn.AdaptiveAvgPool2d((15, None))
 
-    # Skip from enc2: (B, 128, 15, 2) — interpolated to (15, 4) before concat -> 256
+    # Skip from enc2: (B, 64, 15, 2) — interpolated to (15, 4) before concat -> 128
     self.dec2 = DeconvBlock(
-      256, 64, 32, time_kernel=3, freq_kernel=3, scale=(2, 4), dropout=dropout
+      128, 32, 16, time_kernel=3, freq_kernel=3, scale=(2, 4), dropout=dropout
     )
-    # After dec2: (B, 32, 30, 16) — height already matches enc1
+    # After dec2: (B, 16, 30, 16) — height already matches enc1
 
-    # Skip from enc1: (B, 32, 30, 5) — interpolated to (30, 16) before concat -> 64
+    # Skip from enc1: (B, 16, 30, 5) — interpolated to (30, 16) before concat -> 32
     self.dec1 = DeconvBlock(
-      64, 16, out_channels, time_kernel=5, freq_kernel=5, scale=(2, 4), dropout=dropout
+      32, 8, out_channels, time_kernel=5, freq_kernel=5, scale=(2, 4), dropout=dropout
     )
     # After dec1: (B, out_channels, 60, 64)
 

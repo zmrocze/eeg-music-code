@@ -9,7 +9,7 @@ from eeg_music.data import (
 )
 from eeg_music.eegpt import LRCosine, UseAdamW
 from eeg_music.mel_training import (
-  CNNClassifierRawConfig,
+  CNNClassifierConfig,
   ClassifierModelConfig,
   ClassifierTrainingConfig,
   ClassifierTraining,
@@ -21,8 +21,9 @@ if __name__ == "__main__":
 
   ds = EEGMusicDataset.load_ondisk(
     # Path("./datasets/musing_preprocessed/musing_pre_60ch/")
+    Path("./datasets/bcmi_preprocessed/bcmi_notes_60ch")
     # Path("./datasets/bcmi_preprocessed/bcmi_emotion_60ch/")
-    Path("./datasets/musing_preprocessed/musing_basic_id_129ch/")
+    # Path("./datasets/musing_preprocessed/musing_basic_id_129ch/")
   )
 
   splitted = ds.subject_wise_split(p_train=0.6, p_val=0.2)
@@ -40,19 +41,19 @@ if __name__ == "__main__":
   # --- Cross-entropy variant (multi-class) ---
   config = ClassifierTrainingConfig(
     model_config=ClassifierModelConfig(
-      # model_config=CNNClassifierConfig(in_channels=1, dropout=0.25),
-      model_config=CNNClassifierRawConfig(in_channels=1, dropout=0.25),
+      model_config=CNNClassifierConfig(in_channels=1, dropout=0.25),
+      # model_config=CNNClassifierRawConfig(in_channels=1, dropout=0.25),
       num_classes=12,
       loss="ce",
-      lr_config=LRCosine(max_lr=1e-4, T_0=10, T_mult=2),
+      lr_config=LRCosine(max_lr=1e-5, T_0=10, T_mult=2),
       # lr_config=1e-5,
       optimizer=UseAdamW(),
     ),
-    batch_size=1024,
-    num_epochs=256,
-    project_name="cnn-classifier-emotion-ce",
-    run_name="cnn-classifier-emotion-ce",
-    save_path="cnn-classifier-emotion-ce-ckpt",
+    batch_size=256,
+    num_epochs=512,
+    project_name="cnn-classifier-noteonsets",
+    run_name="cnn-classifier-noteonsets",
+    save_path="cnn-classifier-noteonsets",
   )
 
   training = ClassifierTraining(config, train_ds, val_ds, test_ds)
