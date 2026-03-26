@@ -314,6 +314,63 @@ class CNNReconstruction(nn.Module):
     return d
 
 
+class CNNReconstructionMel(nn.Module):
+  """Encoder (block1 + block2 + block3) -> FC bottleneck -> fc_up outputs (B, 1, 64, 64).
+  Output shape: (batch, 1, 64, 64) where time dimension is constant (broadcasted from 1).
+  Semantics: treats output as 64x64 image where values are constant over time dimension.
+  """
+
+  def __init__(self, in_channels: int = 1, dropout: float = 0.25):
+    super().__init__()
+
+    # ---- Encoder (same as CNNClassifier/CNNReconstruction) ----
+    # Input: (B, in_channels, 60, 20)
+    self.enc1 = ConvBlock(
+      in_channels, 8, 16, freq_kernel=5, time_kernel=5, dropout=dropout
+    )
+    # After enc1: (B, 16, 30, 10)
+    self.enc2 = ConvBlock(16, 32, 64, freq_kernel=3, time_kernel=3, dropout=dropout)
+    # After enc2: (B, 64, 15, 5)
+    self.enc3 = ConvBlock(64, 64, 64, freq_kernel=3, time_kernel=3, dropout=dropout)
+    # After enc3: (B, 64, 7, 2)
+
+    # ---- Bottleneck ----
+    self.flatten = nn.Flatten()
+    self.fc_down = nn.Linear(64 * 7 * 1, 64)
+    self.bottleneck_elu = nn.ELU()
+    # Output (B, 1, 64, 1) then broadcast to (B, 1, 64, 64)
+    self.fc_up = nn.Linear(64, 64)
+
+  def forward(self, x: torch.Tensor) -> torch.Tensor:
+    e1 = self.enc1(x)
+    e2 = self.enc2(e1)
+    e3 = self.enc3(e2)
+    z = self.bottleneck_elu(self.fc_down(self.flatten(e3)))
+    mel_vector = self.fc_up(z)
+    return mel_vector.view(-1, 1, 64, 1).expand(-1, 1, 64, 64)
+
+  def forward_verbose(self, x: torch.Tensor) -> torch.Tensor:
+    print(f"{'Input':<25} {list(x.shape)}")
+    print("--- Encoder Block 1 ---")
+    e1 = self.enc1.forward_verbose(x, "enc1.")
+    print("--- Encoder Block 2 ---")
+    e2 = self.enc2.forward_verbose(e1, "enc2.")
+    print("--- Encoder Block 3 ---")
+    e3 = self.enc3.forward_verbose(e2, "enc3.")
+    print("--- Bottleneck ---")
+    z = self.flatten(e3)
+    print(f"  {'flatten':<20} {list(z.shape)}")
+    z = self.bottleneck_elu(self.fc_down(z))
+    print(f"  {'fc_down+elu':<20} {list(z.shape)}")
+    mel_vector = self.fc_up(z)
+    print(f"  {'fc_up(Linear)':<20} {list(mel_vector.shape)}")
+    d = mel_vector.view(-1, 1, 64, 1)
+    print(f"  {'view(B,1,64,1)':<20} {list(d.shape)}")
+    d = d.expand(-1, 1, 64, 64)
+    print(f"  {'expand(B,1,64,64)':<20} {list(d.shape)}")
+    return d
+
+
 def _print_params(model: nn.Module, name: str) -> None:
   total = sum(p.numel() for p in model.parameters())
   trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -348,3 +405,11 @@ if __name__ == "__main__":
   _y = rec.forward_verbose(x)
   # print("rec", _y)
   _print_params(rec, "CNNReconstruction")
+
+  print("\n" + "=" * 60)
+  print("CNNReconstructionMel")
+  print("=" * 60)
+  rec_mel = CNNReconstructionMel(in_channels=1)
+  rec_mel.eval()
+  _y_mel = rec_mel.forward_verbose(x)
+  _print_params(rec_mel, "CNNReconstructionMel")
