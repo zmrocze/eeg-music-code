@@ -13,7 +13,12 @@ from lightning.pytorch.callbacks import (
 )
 from lightning.pytorch.callbacks.lr_finder import LearningRateFinder
 
-from .cnn import CNNReconstruction, CNNClassifier, CNNClassifierRaw
+from .cnn import (
+  CNNReconstruction,
+  CNNReconstructionMel,
+  CNNClassifier,
+  CNNClassifierRaw,
+)
 from .eegpt import LRCosine, LRStepLR, UseAdamW, UseSGD, mk_optimizer_and_lr_scheduler
 from .training import (
   MainTraining,
@@ -48,6 +53,7 @@ class CNNReconstructionConfig:
   in_channels: int = 1
   out_channels: int = 1
   dropout: float = 0.25
+  variant: Literal["full", "timeconstant"] = "full"
 
 
 @dataclass
@@ -110,9 +116,13 @@ class MelLightning(LightningModule):
 
     mc = config.model_config
     match mc:
-      case CNNReconstructionConfig():
+      case CNNReconstructionConfig(variant="full"):
         self.model = CNNReconstruction(
           in_channels=mc.in_channels, out_channels=mc.out_channels, dropout=mc.dropout
+        )
+      case CNNReconstructionConfig(variant="timeconstant"):
+        self.model = CNNReconstructionMel(
+          in_channels=mc.in_channels, dropout=mc.dropout
         )
       case _:
         raise ValueError(f"Unsupported model_config for mel reconstruction: {type(mc)}")

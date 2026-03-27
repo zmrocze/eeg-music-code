@@ -60,13 +60,15 @@ if __name__ == "__main__":
 
   config = MelTrainingConfig(
     model_config=MelModelConfig(
-      model_config=CNNReconstructionConfig(in_channels=1, out_channels=1, dropout=0.25),
+      model_config=CNNReconstructionConfig(
+        in_channels=1, out_channels=1, dropout=0.25, variant="timeconstant"
+      ),
       lr_config=LRCosine(max_lr=1e-4, T_0=10, T_mult=2),
       optimizer=UseAdamW(),
     ),
     auroc_every_n_epochs=10,
     batch_size=120,
-    num_epochs=12000,
+    num_epochs=1750,
   )
 
   training = MelTraining(config, train_ds, val_ds, test_ds)
