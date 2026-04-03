@@ -19,6 +19,7 @@ from .cnn import (
   CNNClassifier,
   CNNClassifierRaw,
 )
+from .lstm import BiLSTM
 from .eegpt import LRCosine, LRStepLR, UseAdamW, UseSGD, mk_optimizer_and_lr_scheduler
 from .training import (
   MainTraining,
@@ -57,10 +58,22 @@ class CNNReconstructionConfig:
 
 
 @dataclass
+class BiLSTMConfig:
+  """Config wrapper for BiLSTM (for ODF 1D sequences)."""
+
+  input_size: int = 60
+  hidden_size: int = 64
+  num_layers: int = 2
+  output_size: int = 1
+
+
+@dataclass
 class MelModelConfig:
   """Model config for mel reconstruction — only the fields MelLightning actually uses."""
 
-  model_config: CNNReconstructionConfig = field(default_factory=CNNReconstructionConfig)
+  model_config: CNNReconstructionConfig | BiLSTMConfig = field(
+    default_factory=CNNReconstructionConfig
+  )
   lr_config: float | LRCosine | LRStepLR = 1e-4
   optimizer: UseAdamW | UseSGD = field(default_factory=UseAdamW)
 
@@ -81,6 +94,7 @@ class MelTrainingConfig:
   prefetch_factor: int = 2
   pin_memory: bool = True
   include_info: bool = True
+  music_batch_fn: object = None
 
   # Training
   num_epochs: int = 200
@@ -124,19 +138,33 @@ class MelLightning(LightningModule):
         self.model = CNNReconstructionMel(
           in_channels=mc.in_channels, dropout=mc.dropout
         )
+      case BiLSTMConfig():
+        self.model = BiLSTM(
+          input_size=mc.input_size,
+          hidden_size=mc.hidden_size,
+          num_layers=mc.num_layers,
+          output_size=mc.output_size,
+        )
       case _:
         raise ValueError(f"Unsupported model_config for mel reconstruction: {type(mc)}")
+
+    self.is_lstm = isinstance(mc, BiLSTMConfig)
 
     self.loss_fn = nn.MSELoss()
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:
-    # EEG arrives as (B, channels, time) — add image channel dim -> (B, 1, channels, time)
+    if self.is_lstm:
+      # LSTM expects (B, seq_len, input_size): transpose (B, channels, time) -> (B, time, channels)
+      out = self.model(x.transpose(1, 2))  # (B, time, output_size)
+      # Reshape to match mel format: (B, time, 1) -> (B, 1, 1, time)
+      return out.transpose(1, 2).unsqueeze(1)
+    # CNN: EEG arrives as (B, channels, time) — add image channel dim -> (B, 1, channels, time)
     return self.model(x.unsqueeze(1))
 
   def _step(self, batch, stage: str):
     x = batch["eeg"]
-    y = batch["music"]  # (B, n_mels, n_frames)
-    y_hat = self(x)  # (B, 1, 64, 64)
+    y = batch["music"]  # (B, 1, n_mels, n_frames) or (B, 1, 1, 1) for LSTM
+    y_hat = self(x)  # (B, 1, 64, 64) or (B, 1, 1, 1) for LSTM
     loss = self.loss_fn(y_hat, y)
     self.log(
       f"{stage}_loss",
@@ -184,13 +212,16 @@ class MelTraining(MainTraining):
     self._test_ds = test_ds
 
   def create_dataloaders(self):
+    def default_music_batch_fn(xs):
+      return torch.stack(
+        [torch.from_numpy((x.mel + 40.0) / 40.0).float() for x in xs]
+      ).unsqueeze(1)
+
     collate_fn = create_collate_fn(
       include_info=self.config.include_info,
-      music_batch_fn=lambda xs: torch.stack(
-        # !!!! take middle 1s of recording
-        # [torch.from_numpy(x.mel[:, 32 : 64 + 32]).float() for x in xs]
-        [torch.from_numpy((x.mel + 40.0) / 40.0).float() for x in xs]
-      ).unsqueeze(1),  # (B, 1, n_mels, n_frames)
+      music_batch_fn=self.config.music_batch_fn
+      if self.config.music_batch_fn is not None
+      else default_music_batch_fn,
       eeg_batch_fn=lambda x: torch.stack(
         [torch.from_numpy(a.get_array().data) for a in x]  # pyright: ignore[reportAttributeAccessIssue]
       ),
@@ -275,6 +306,98 @@ class MelTraining(MainTraining):
         **model_config_dict,
       }
     )
+
+
+class WeightedMSELoss(nn.Module):
+  """Custom weighted MSE loss for ODF reconstruction.
+
+  Uses a weighted MSE loss where:
+  - w(x) = 20 for 0 <= x < 0.05
+  - w(x) = linear from 4 to 1 for 0.05 <= x <= 1
+
+  Loss formula: Sum_i w(yhat_i) * (y_i - yhat_i)^2
+  """
+
+  def forward(self, y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """Compute weighted MSE loss.
+
+    Args:
+      y_hat: Predicted ODF values
+      y: Target ODF values
+
+    Returns:
+      Weighted MSE loss
+    """
+    # Compute weights based on predicted values
+    # w(x) = 20 for 0 <= x < 0.05
+    # w(x) = 4 - 3*(x - 0.05)/(1 - 0.05) for 0.05 <= x <= 1
+    # Simplified: w(x) = 4 - 3*(x - 0.05)/0.95 = 4 - 3.157894737*x + 0.157894737
+    #           = 4.157894737 - 3.157894737*x
+
+    weights = torch.where(
+      y_hat < 0.05,
+      torch.tensor(1.0, device=y_hat.device, dtype=y_hat.dtype),
+      torch.tensor(50.0, device=y_hat.device, dtype=y_hat.dtype),
+    )
+
+    # Clamp weights to [1, 20] to handle values outside [0, 1]
+    weights = torch.clamp(weights, min=1.0, max=20.0)
+
+    # Compute weighted MSE
+    squared_error = (y - y_hat) ** 2
+    weighted_loss = weights * squared_error
+
+    return weighted_loss.mean()
+
+
+class OdfLightning(MelLightning):
+  """Lightning module for ODF reconstruction with custom weighted MSE loss."""
+
+  def __init__(self, config: MelModelConfig):
+    super().__init__(config)
+    self.loss_fn = WeightedMSELoss()
+
+
+class OdfTraining(MelTraining):
+  """Training for ODF (onset detection function) data.
+
+  Inherits from MelTraining but uses OdfLightning with custom weighted loss
+  and skips mel-spectrogram normalization since ODF values are already in [0, 1] range.
+  """
+
+  def create_model(self):
+    """Create OdfLightning from config.model_config."""
+    self.model = OdfLightning(self.config.model_config)
+
+  def create_dataloaders(self):
+    def default_music_batch_fn(xs):
+      return torch.stack([torch.from_numpy(x.mel).float() for x in xs]).unsqueeze(1)
+
+    collate_fn = create_collate_fn(
+      include_info=self.config.include_info,
+      music_batch_fn=self.config.music_batch_fn
+      if self.config.music_batch_fn is not None
+      else default_music_batch_fn,
+      eeg_batch_fn=lambda x: torch.stack(
+        [torch.from_numpy(a.get_array().data) for a in x]  # pyright: ignore[reportAttributeAccessIssue]
+      ),
+    )
+    self.dataloaders = {
+      split: create_dataloader(
+        ds,
+        batch_size=self.config.batch_size,
+        num_workers=self.config.data_loader_num_workers,
+        pin_memory=self.config.pin_memory,
+        is_training=(split == "train"),
+        prefetch_factor=self.config.prefetch_factor,
+        collate_fn=collate_fn,
+      )
+      for split, ds in [
+        ("train", self._train_ds),
+        ("val", self._val_ds),
+        ("test", self._test_ds),
+      ]
+    }
 
 
 # ---------------------------------------------------------------------------
