@@ -37,6 +37,7 @@ class CNNClassifierConfig:
 
   in_channels: int = 1
   dropout: float = 0.25
+  channels: int = 32
 
 
 @dataclass
@@ -337,7 +338,7 @@ class WeightedMSELoss(nn.Module):
     weights = torch.where(
       y_hat < 0.05,
       torch.tensor(1.0, device=y_hat.device, dtype=y_hat.dtype),
-      torch.tensor(50.0, device=y_hat.device, dtype=y_hat.dtype),
+      torch.tensor(100.0, device=y_hat.device, dtype=y_hat.dtype),
     )
 
     # Clamp weights to [1, 20] to handle values outside [0, 1]
@@ -468,7 +469,10 @@ class ClassifierLightning(LightningModule):
         )
       case CNNClassifierConfig():
         self.model = CNNClassifier(
-          num_classes=num_out, in_channels=mc.in_channels, dropout=mc.dropout
+          num_classes=num_out,
+          in_channels=mc.in_channels,
+          dropout=mc.dropout,
+          channels=mc.channels,
         )
 
     self.loss_fn: nn.Module = (

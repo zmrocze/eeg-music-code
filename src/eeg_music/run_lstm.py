@@ -23,17 +23,25 @@ if __name__ == "__main__":
   trial_length_secs = Fraction(1, 1)
 
   ds = EEGMusicDataset.load_ondisk(
+    # Path("./datasets/musing_preprocessed/musing_rawnoica_odf_129/")
     Path("./datasets/musing_preprocessed/musing_rawica_odf/")
   )
 
   filtered_ds = EEGMusicDataset()
+  # filtered_ds.df = pd.DataFrame(
+  #   ds.df[(ds.df["subject"] == "001")].reset_index(drop=True)
+  # )
   filtered_ds.df = pd.DataFrame(
-    ds.df[(ds.df["subject"] == "001")].reset_index(drop=True)
+    ds.df.iloc[:1].reset_index(drop=True)
+    # ds.df.iloc[12:13].reset_index(drop=True)
+    # ds.df.iloc[24:25].reset_index(drop=True)
+    # ds.df.iloc[26:37].reset_index(drop=True)
+    # ds.df.iloc[38:39].reset_index(drop=True)
   )
   filtered_ds.music_collection = ds.music_collection
   ds = filtered_ds
 
-  train_ds, test_ds = temporal_train_test_split(ds, length_sec=Fraction(20, 1))
+  train_ds, test_ds = temporal_train_test_split(ds, length_sec=Fraction(80, 1))
   val_ds, test_ds = temporal_train_test_split(test_ds, length_sec=Fraction(20, 1))
 
   train_ds = ArrayStratifiedSamplingDataset(
@@ -58,16 +66,19 @@ if __name__ == "__main__":
     model_config=MelModelConfig(
       model_config=BiLSTMConfig(
         input_size=12,
+        # input_size=129,
+        # hidden_size=256,
         hidden_size=64,
         num_layers=2,
         output_size=1,
       ),
-      lr_config=LRCosine(max_lr=3e-5, T_0=10, T_mult=2),
+      lr_config=LRCosine(max_lr=1e-5, T_0=10, T_mult=2),
       optimizer=UseAdamW(),
     ),
     music_batch_fn=odf_batch_fn,
     auroc_every_n_epochs=10,
-    batch_size=120,
+    # batch_size=120
+    batch_size=10,
     num_epochs=1750,
     project_name="odf-reconstruction-lstm",
     run_name="bilstm-odf",

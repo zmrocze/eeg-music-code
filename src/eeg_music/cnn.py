@@ -129,20 +129,30 @@ class CNNClassifierRaw(nn.Module):
 
 
 class CNNClassifier(nn.Module):
-  def __init__(self, num_classes: int = 4, in_channels: int = 1, dropout: float = 0.25):
+  def __init__(
+    self, num_classes: int = 4, in_channels: int = 1, dropout: float = 0.25, channels=32
+  ):
     super().__init__()
-    # Input: (batch, in_channels, 60, 20)
+    # Input: (batch, in_channels, 60, 10)
     self.block1 = ConvBlock(
       in_channels, 8, 16, freq_kernel=5, time_kernel=5, dropout=dropout
     )
-    # After block1: (B, 16, 30, 10)
-    self.block2 = ConvBlock(16, 32, 64, freq_kernel=3, time_kernel=3, dropout=dropout)
-    # After block2: (B, 64, 15, 5)
-    self.block3 = ConvBlock(64, 64, 64, freq_kernel=3, time_kernel=3, dropout=dropout)
-    # After block3: (B, 64, 7, 2)
+    # After block1: (B, 16, 30, 5)
+    self.block2 = ConvBlock(
+      16, channels, channels * 2, freq_kernel=3, time_kernel=3, dropout=dropout
+    )
+    # After block2: (B, channels*2, 15, 2)
+    self.block3 = ConvBlock(
+      channels * 2,
+      channels * 2,
+      channels * 2,
+      freq_kernel=3,
+      time_kernel=3,
+      dropout=dropout,
+    )
+    # After block3: (B, channels*2, 7, 1)
     self.flatten = nn.Flatten()
-    # self.fc = nn.Linear(64 * 7 * 2, num_classes)
-    self.fc = nn.Linear(64 * 7 * 1, num_classes)
+    self.fc = nn.Linear(channels * 2 * 7 * 1, num_classes)
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:
     return self.fc(self.flatten(self.block3(self.block2(self.block1(x)))))
