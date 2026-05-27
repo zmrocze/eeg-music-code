@@ -22,10 +22,10 @@ if __name__ == "__main__":
     # Path("./datasets/musing_preprocessed/musing_pre_60ch/")
     # Path("./datasets/bcmi_preprocessed/bcmi_notes_60ch")
     # Path("./datasets/musing_preprocessed/musing_basic_id_60ch")
-    # Path("./datasets/musing_preprocessed/musing_pre_60ch")
+    Path("./datasets/musing_preprocessed/musing_pre_60ch")
     # Path("./datasets/musing_preprocessed/musing_basic_id_60ch")
     # Path("./datasets/musing_preprocessed/musing_mel64_60ch")
-    Path("./datasets/bcmi_preprocessed/bcmi_ids_60ch")
+    #### Path("./datasets/bcmi_preprocessed/bcmi_ids_60ch")
     # Path("./datasets/bcmi_preprocessed/bcmi_emotion_60ch/")
     # Path("./datasets/musing_preprocessed/musing_basic_id_129ch/")
   )
@@ -83,19 +83,19 @@ if __name__ == "__main__":
       ),  # 0.18020834028720856
       # model_config=CNNClassifierConfig(in_channels=1, dropout=0.25, channels=256), # 0.16458334028720856
       #  model_config=CNNClassifierRawConfig(in_channels=1, dropout=0.25),
-      # num_classes=12,
-      num_classes=3456,
+      num_classes=12,
+      # num_classes=3456,
       loss="ce",
       # lr_config=LRCosine(max_lr=1e-5, T_0=10, T_mult=2),
-      lr_config=1e-6,
+      lr_config=1e-5,
       # lr_config=1e-5,
       optimizer=UseAdamW(),
     ),
-    batch_size=256,
+    batch_size=120,
     num_epochs=4000,
-    project_name="cnn-classifier-noteonsets",
-    run_name="cnn-classifier-noteonsets",
-    save_path="cnn-classifier-noteonsets",
+    project_name="cnn-classifier-musing",
+    run_name="cnn-classifier-musing",
+    save_path="cnn-classifier-musing",
   )
 
   training = ClassifierTraining(config, train_ds, val_ds, test_ds)
